@@ -159,7 +159,7 @@ static void CheckPassedSockets(const int (&pair)[2]) {
     Require(SendWith(pair[0], "two", control.data(), length) == 3);
     Require(close_nid_postfix(first[0]) == 0 && close_nid_postfix(second[0]) == 0);
     const auto received = ReceiveWith(pair[1], Space(2 * sizeof(int)), ControlCloseOnExec);
-    Require(received.bytes == 3 && received.flags == 0 && received.controlLength == Space(2 * sizeof(int)));
+    Require(received.bytes == 3 && received.flags == ControlCloseOnExec && received.controlLength == Space(2 * sizeof(int)));
     RequireRecord(received, 2);
     const int stream = ReceivedDescriptor(received, 0);
     const int datagram = ReceivedDescriptor(received, 1);
