@@ -37,6 +37,9 @@ int APS5_VABI open_nid_postfix(const char*, int, int);
 int APS5_VABI close_nid_postfix(int);
 int APS5_VABI pipe_nid_postfix(int*);
 int APS5_VABI socket_nid_postfix(int, int, int);
+int APS5_VABI sceNetInit_nid_postfix();
+int APS5_VABI sceNetSocket(const char*, int, int, int);
+int APS5_VABI sceNetSocketClose(int);
 std::int64_t APS5_VABI readlink_nid_postfix(const char*, char*, std::size_t);
 int APS5_VABI lstat_nid_postfix(const char*, FileStat*);
 std::int64_t APS5_VABI pathconf_nid_postfix(const char*, int);
@@ -450,6 +453,10 @@ void CheckSocketPathconf(F fn) {
         Require(descriptor >= 0);
         CheckPipeBufferPathconf(fn, descriptor);
         Require(close_nid_postfix(descriptor) == 0);
+        const int net = sceNetSocket("pathconf", 2, type, 0);
+        Require(net >= 0);
+        CheckPipeBufferPathconf(fn, net);
+        Require(sceNetSocketClose(net) == 0);
     }
 }
 
@@ -490,6 +497,7 @@ int main() {
     CheckDescriptorPathconf(_fpathconf_nid_postfix, descriptor);
     CheckPipePathconf(fpathconf_nid_postfix);
     CheckPipePathconf(_fpathconf_nid_postfix);
+    Require(sceNetInit_nid_postfix() == 0);
     CheckSocketPathconf(fpathconf_nid_postfix);
     CheckSocketPathconf(_fpathconf_nid_postfix);
     Require(close_nid_postfix(descriptor) == 0);
