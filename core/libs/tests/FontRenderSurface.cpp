@@ -1,3 +1,5 @@
+#include "prx/libSceFontFt/include/Api.hpp"
+#include "prx/libSceFont/include/Api.hpp"
 #include "prx/libSceFont/include/FontTypes.hpp"
 #include <algorithm>
 #include <array>
@@ -11,27 +13,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-extern "C" {
-int APS5_VABI sceFontMemoryInit(FontMemory*, void*, std::uint32_t, const FontMemoryInterface*, void*, FontMemoryDestroyFunction, void*);
-int APS5_VABI sceFontMemoryTerm(FontMemory*);
-int APS5_VABI sceFontCreateLibrary(const FontMemory*, const void*, FontLibrary*);
-int APS5_VABI sceFontDestroyLibrary(FontLibrary*);
-int APS5_VABI sceFontSupportExternalFonts(FontLibrary, std::uint32_t, std::uint32_t);
-int APS5_VABI sceFontOpenFontMemory(FontLibrary, const void*, std::uint32_t, const FontOpenDetail*, FontHandle*);
-int APS5_VABI sceFontCloseFont(FontHandle);
-int APS5_VABI sceFontCreateRenderer(const FontMemory*, const void*, FontRenderer*);
-int APS5_VABI sceFontDestroyRenderer(FontRenderer*);
-int APS5_VABI sceFontBindRenderer(FontHandle, FontRenderer);
-int APS5_VABI sceFontUnbindRenderer(FontHandle);
-int APS5_VABI sceFontSetupRenderScalePixel(FontHandle, float, float);
-void APS5_VABI sceFontRenderSurfaceInit(FontRenderSurface*, void*, int, int, int, int);
-int APS5_VABI sceFontRenderCharGlyphImage(FontHandle, std::uint32_t, FontRenderSurface*, float, float, FontGlyphMetrics*, FontRenderOutput*);
-int APS5_VABI sceFontRenderCharGlyphImageHorizontal(FontHandle, std::uint32_t, FontRenderSurface*, float, float, FontGlyphMetrics*, FontRenderOutput*);
-int APS5_VABI sceFontRenderCharGlyphImageVertical(FontHandle, std::uint32_t, FontRenderSurface*, float, float, FontGlyphMetrics*, FontRenderOutput*);
-const void* APS5_VABI sceFontSelectLibraryFt(int);
-const void* APS5_VABI sceFontSelectRendererFt(int);
-}
 
 static void Check(bool value, int line) {
     if (!value) {
