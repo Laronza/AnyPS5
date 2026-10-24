@@ -399,7 +399,8 @@ static std::vector<std::uint32_t> HoistedTableCaller(HoistedShape shape) {
 
 static void CheckTableCalleeProgramCounter() {
     const SwappcInfo swappc{false, 0u, 16u};
-    const auto program = RdnaInstructionDecoder{}.Decode(TableCaller());
+    const auto caller = TableCaller();
+    const auto program = RdnaInstructionDecoder{}.Decode(caller);
     const auto calls = FindTableCalls(program, swappc);
     Require(calls.size() == 1u);
     const std::vector<std::uint32_t> callee{0xbf820001u, 0xbe901f00u, 0xbe80200eu};
