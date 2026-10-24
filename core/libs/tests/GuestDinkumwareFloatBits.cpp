@@ -151,6 +151,10 @@ int main() {
     Require(_Fpcomp_nid_postfix(1.0, 2.0) == 1 && _Fpcomp_nid_postfix(2.0, 1.0) == 4 && _Fpcomp_nid_postfix(1.0, 1.0) == 2 && _Fpcomp_nid_postfix(NAN, 1.0) == 0);
     Require(_FFpcomp_nid_postfix(-1.0f, 2.0f) == 1 && _FFpcomp_nid_postfix(1.0f, NAN) == 0);
     Require(_LFpcomp_nid_postfix(X(0x4000, 0x4000000000000000ull), 1.0L) == 2 && _LFpcomp_nid_postfix(X(0x7fff, 0x0000000000000000ull), 1.0L) == 2 && _LFpcomp_nid_postfix(X(0x7fff, 0x4000000000000000ull), 1.0L) == 0 && _LFpcomp_nid_postfix(3.0L, 1.0L) == 4);
+    Require(_LFpcomp_nid_postfix(X(0x4000, 0x4000000000000000ull), 3.0L) == 2 && _LFpcomp_nid_postfix(3.0L, X(0x4000, 0x4000000000000000ull)) == 2);
+    Require(_LFpcomp_nid_postfix(X(0x4001, 0x6000000000000000ull), 1.0L) == 2 && _LFpcomp_nid_postfix(1.0L, X(0x4001, 0x6000000000000000ull)) == 2);
+    Require(_LFpcomp_nid_postfix(X(0x4000, 0x4000000000000000ull), X(0x4001, 0x6000000000000000ull)) == 2 && _LFpcomp_nid_postfix(X(0x4001, 0x6000000000000000ull), X(0x4000, 0x4000000000000000ull)) == 2);
+    Require(_LFpcomp_nid_postfix(X(0xc000, 0x4000000000000000ull), 3.0L) == 2 && _LFpcomp_nid_postfix(X(0x4000, 0x0000000000000000ull), 1.0L) == 2 && _LFpcomp_nid_postfix(X(0x0000, 0x8000000000000000ull), 1.0L) == 1);
     Require(SameBits(_Poly_nid_postfix(0.3, kPoly, 3), D(0xc0038ded288ce703ull)) && SameBits(_Poly_nid_postfix(0.3, kPoly, 0), 0.1) && SameBits(_Poly_nid_postfix(0.3, kPoly, -1), 0.1));
     Require(SameBits(_FPoly_nid_postfix(0.3f, kFPoly, 3), F(0xc01c6f6au)));
     Require(SameBits(_LPoly_nid_postfix(0.3L, kLPoly, 3), X(0xc000, 0x9c6f694467381d7eull)));
