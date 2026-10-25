@@ -1,3 +1,4 @@
+#include "prx/libc/include/Api.hpp"
 #include "prx/libc/include/general/VabiMacros.hpp"
 #include <array>
 #include <barrier>
@@ -22,8 +23,7 @@ struct Environment { std::array<std::uint32_t,7> x87; std::uint32_t mxcsr; };
 static_assert(sizeof(Environment)==32 && alignof(Environment)==4 && offsetof(Environment,mxcsr)==28);
 using SetEnvironment=int(APS5_VABI*)(const Environment*);
 SetEnvironment setEnvironment;
-extern "C" int* APS5_VABI __error_nid_postfix();
-extern "C" int APS5_VABI fegetenv_nid_postfix(Environment*);
+static_assert(sizeof(Environment)==sizeof(GuestFloatingPointEnvironment) && offsetof(Environment,mxcsr)==offsetof(GuestFloatingPointEnvironment,mxcsr));
 
 void Require(bool condition,const char* message) {
     if(!condition) { std::fprintf(stderr,"fesetenv: %s\n",message); std::abort(); }
@@ -103,7 +103,7 @@ void TagsAndPointers() {
     Write(original);
     Require(result==0 && Same(after,desired),"nonempty x87 tag/TOP and instruction pointer restored");
     Environment saved;
-    Require(fegetenv_nid_postfix(&saved)==0,"save using existing guest fegetenv");
+    Require(fegetenv_nid_postfix(reinterpret_cast<GuestFloatingPointEnvironment*>(&saved))==0,"save using existing guest fegetenv");
     asm volatile("fninit" : : : "st","st(1)","st(2)","st(3)","st(4)","st(5)","st(6)","st(7)");
     Require(setEnvironment(&saved)==0,"restore guest fegetenv output");
     const auto restored=Read();
