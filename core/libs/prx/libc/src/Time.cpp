@@ -6,9 +6,8 @@
 #include <cstring>
 #include <cstdio>
 #include <limits>
-#include <memory>
 #include <mutex>
-#include <new>
+#include <type_traits>
 #include <stdexcept>
 #include <string>
 
@@ -248,31 +247,53 @@ bool isLeapYearSum(int year, int base) {
     return isLeapYear(year % 400 + base % 400);
 }
 
+template<typename TChar>
 struct FormatBuffer {
-    char* cursor;
-    char* limit;
-    bool full;
+    TChar* cursor;
+    std::size_t remaining;
+    bool full = false;
+    bool failed = false;
 };
 
-void addPiece(FormatBuffer& buffer, const char* text, std::size_t length) {
-    if (buffer.full) return;
-    if (length > static_cast<std::size_t>(buffer.limit - buffer.cursor)) {
+template<typename TChar>
+void addPiece(FormatBuffer<TChar>& buffer, const TChar* text, std::size_t length) {
+    if (buffer.full || buffer.failed) return;
+    if (length > buffer.remaining) {
         buffer.full = true;
         return;
     }
-    std::memcpy(buffer.cursor, text, length);
+    std::memcpy(buffer.cursor, text, length * sizeof(TChar));
     buffer.cursor += length;
+    buffer.remaining -= length;
 }
 
-void addText(FormatBuffer& buffer, const char* text) {
-    addPiece(buffer, text, std::strlen(text));
+template<typename TChar>
+void addText(FormatBuffer<TChar>& buffer, const char* text) {
+    if (buffer.full || buffer.failed) return;
+    if constexpr (std::is_same_v<TChar, char>) {
+        addPiece(buffer, text, std::strlen(text));
+    } else {
+        if (buffer.remaining == 0) {
+            buffer.full = true;
+            return;
+        }
+        unsigned char state[16]{};
+        const std::size_t length = mbsrtowcs_nid_postfix(buffer.cursor, &text, buffer.remaining, state);
+        if (length == static_cast<std::size_t>(-1)) buffer.failed = true;
+        else {
+            buffer.cursor += length;
+            buffer.remaining -= length;
+            if (buffer.remaining == 0) buffer.full = true;
+        }
+    }
 }
 
 int clampedField(std::int64_t value, int modulus) {
     return value < 0 ? 0 : static_cast<int>(value % modulus);
 }
 
-void addNumber(FormatBuffer& buffer, std::int64_t value, int modulus, const char* format) {
+template<typename TChar>
+void addNumber(FormatBuffer<TChar>& buffer, std::int64_t value, int modulus, const char* format) {
     char text[16];
     std::snprintf(text, sizeof(text), format, clampedField(value, modulus));
     addText(buffer, text);
@@ -315,9 +336,11 @@ IsoWeek isoWeek(const GuestTm& time) {
     }
 }
 
-void formatTime(FormatBuffer& buffer, const char* format, const GuestTm& time);
+template<typename TChar, typename TFormatChar>
+void formatTime(FormatBuffer<TChar>& buffer, const TFormatChar* format, const GuestTm& time);
 
-void addZoneOffset(FormatBuffer& buffer, const GuestTm& time) {
+template<typename TChar>
+void addZoneOffset(FormatBuffer<TChar>& buffer, const GuestTm& time) {
     std::int64_t east = -timezone_nid_postfix + (time.tm_isdst > 0 ? 3600 : 0);
     const char sign = east < 0 ? '-' : '+';
     if (east < 0) east = -east;
@@ -326,7 +349,8 @@ void addZoneOffset(FormatBuffer& buffer, const GuestTm& time) {
     addText(buffer, text);
 }
 
-bool addConversion(FormatBuffer& buffer, char conversion, const GuestTm& time) {
+template<typename TChar, typename TFormatChar>
+bool addConversion(FormatBuffer<TChar>& buffer, TFormatChar conversion, const GuestTm& time) {
     const std::int64_t year = static_cast<std::int64_t>(time.tm_year) + YEAR_BASE;
     switch (conversion) {
     case 'a': addText(buffer, tableName(time.tm_wday, WEEKDAY_NAMES, WEEKDAY_NAMES, 7)); return true;
@@ -374,10 +398,12 @@ bool addConversion(FormatBuffer& buffer, char conversion, const GuestTm& time) {
     }
 }
 
-void formatTime(FormatBuffer& buffer, const char* format, const GuestTm& time) {
-    for (; *format != '\0' && !buffer.full; ++format) {
+template<typename TChar, typename TFormatChar>
+void formatTime(FormatBuffer<TChar>& buffer, const TFormatChar* format, const GuestTm& time) {
+    for (; *format != '\0' && !buffer.full && !buffer.failed; ++format) {
         if (*format != '%' || format[1] == '\0') {
-            addPiece(buffer, format, 1);
+            const TChar literal = *format;
+            addPiece(buffer, &literal, 1);
             continue;
         }
         ++format;
@@ -386,16 +412,23 @@ void formatTime(FormatBuffer& buffer, const char* format, const GuestTm& time) {
             ++format;
         }
         if (!addConversion(buffer, *format, time)) {
-            const char unknown[] = {'%', *format};
-            addPiece(buffer, unknown, sizeof(unknown));
+            if constexpr (std::is_same_v<TChar, char>) {
+                const char unknown[] = {'%', *format};
+                addPiece(buffer, unknown, sizeof(unknown));
+            } else {
+                const TChar percent = '%';
+                const TChar unknown = *format;
+                addPiece(buffer, &percent, 1);
+                addPiece(buffer, &unknown, 1);
+            }
         }
     }
 }
 
 std::size_t formatGuestTime(char* destination, std::size_t size, const char* format, const GuestTm& time) {
-    FormatBuffer buffer{destination, destination + size, false};
+    FormatBuffer<char> buffer{destination, size};
     formatTime(buffer, format == nullptr ? "%c" : format, time);
-    if (buffer.full || buffer.cursor == buffer.limit) return 0;
+    if (buffer.full || buffer.remaining == 0) return 0;
     *buffer.cursor = '\0';
     return static_cast<std::size_t>(buffer.cursor - destination);
 }
@@ -615,43 +648,25 @@ size_t APS5_VABI strftime_nid_postfix(char* str, size_t count, const char* forma
 }
 
 size_t APS5_VABI wcsftime_nid_postfix(std::uint16_t* str, size_t count, const std::uint16_t* format, const GuestTm* timeptr) {
-    constexpr int GuestEnomem = 12;
     constexpr int GuestEinval = 22;
-    constexpr auto Failed = static_cast<std::size_t>(-1);
     if (format == nullptr) throw std::invalid_argument("wcsftime: null format");
     if (timeptr == nullptr) throw std::invalid_argument("wcsftime: null time");
     if (str == nullptr) return 0;
-    const std::uint16_t* formatCursor = format;
-    const std::size_t formatLength = wcsrtombs_nid_postfix(nullptr, &formatCursor, 0, nullptr);
-    if (formatLength == Failed) return 0;
-    const std::unique_ptr<char[]> narrowFormat(new (std::nothrow) char[formatLength + 1]);
-    if (!narrowFormat) {
-        errno = GuestEnomem;
-        return 0;
-    }
-    wcsrtombs_nid_postfix(narrowFormat.get(), &formatCursor, formatLength + 1, nullptr);
-
     const auto maxCharacterBytes = static_cast<std::size_t>(_Getmbcurmax_nid_postfix());
     if (std::numeric_limits<std::size_t>::max() / maxCharacterBytes <= count) {
         errno = GuestEinval;
         return 0;
     }
-    const std::unique_ptr<char[]> narrow(new (std::nothrow) char[count * maxCharacterBytes]);
-    if (!narrow) {
-        errno = GuestEnomem;
-        return 0;
-    }
     const int callerError = errno;
-    if (strftime_nid_postfix(narrow.get(), count * maxCharacterBytes, narrowFormat.get(), timeptr) == 0) {
-        errno = callerError;
-        return 0;
-    }
-    const char* narrowCursor = narrow.get();
-    const std::size_t length = mbsrtowcs_nid_postfix(nullptr, &narrowCursor, 0, nullptr);
-    if (length == Failed || length >= count) return 0;
-    mbsrtowcs_nid_postfix(str, &narrowCursor, count, nullptr);
-
-    return length;
+    const ZoneScope zone;
+    tzset_nid_postfix();
+    FormatBuffer<std::uint16_t> buffer{str, count};
+    formatTime(buffer, format, *timeptr);
+    if (buffer.failed) return 0;
+    errno = callerError;
+    if (buffer.full || buffer.remaining == 0) return 0;
+    *buffer.cursor = 0;
+    return count - buffer.remaining;
 }
 
 // The guest's CLOCKS_PER_SEC is 1000000: clock() reports process CPU time in microseconds.
