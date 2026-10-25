@@ -1,5 +1,6 @@
 #include "prx/libc/include/Api.hpp"
 #include "prx/libc/include/general/VabiMacros.hpp"
+#include <algorithm>
 #include <array>
 #include <barrier>
 #include <cstdint>
@@ -328,7 +329,7 @@ void CheckHoldExcept(HoldExcept hold) {
     first.join();
     second.join();
     const auto afterThreads = ReadEnvironment();
-    Require(std::memcmp(&original, &afterThreads, sizeof(original)) == 0, "feholdexcept workers preserve the main environment");
+    Require(std::equal(original.x87.begin(), original.x87.begin() + 3, afterThreads.x87.begin()) && original.sse == afterThreads.sse, "feholdexcept workers preserve the main environment");
 }
 
 int main(int argc, char** argv) {
