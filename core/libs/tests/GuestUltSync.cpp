@@ -225,7 +225,8 @@ void ReaderWriterUnderscored() {
     Object pool{};
     Object rwlock{};
     std::memset(&rwlock, 0x5a, sizeof(rwlock));
-    std::uint8_t optParam[128];
+    alignas(UltOptParam) std::uint8_t optBytes[128];
+    auto* optParam = reinterpret_cast<UltOptParam*>(optBytes);
     std::uint8_t workArea[2048];
     CHECK(_sceUltReaderWriterLockOptParamInitialize(optParam, 0) == Ok);
     CHECK(_sceUltReaderWriterLockCreate(nullptr, "underscored", nullptr, optParam, 0) == Null);
