@@ -873,6 +873,16 @@ if(BUILD_TESTING)
         set_tests_properties(guest_generic_category PROPERTIES ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
     endif()
+    add_test_executable(guest_future_category_tests ${LIBS_INCLUDE_DIR}/tests/GuestFutureCategory.cpp)
+    target_include_directories(guest_future_category_tests PRIVATE ${LIBS_INCLUDE_DIR})
+    target_link_libraries(guest_future_category_tests PRIVATE libc)
+    configure_windows_unwind(guest_future_category_tests)
+    add_test(NAME guest_future_category COMMAND guest_future_category_tests)
+    set_tests_properties(guest_future_category PROPERTIES TIMEOUT 10)
+    if(WIN32)
+        set_tests_properties(guest_future_category PROPERTIES ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>")
+    endif()
     add_test(NAME guest_new_handler COMMAND guest_new_handler_tests)
     if(WIN32)
         set_tests_properties(guest_new_handler PROPERTIES ENVIRONMENT_MODIFICATION
@@ -1263,7 +1273,7 @@ if(MINGW)
         add_test(NAME windows_crash_stack_words COMMAND windows_backtrace_report_tests fault)
         set_tests_properties(windows_crash_stack_words PROPERTIES TIMEOUT 20
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>;APS5_CRASH_STACK_BYTES=set:2048"
-            PASS_REGULAR_EXPRESSION "FATAL: unhandled exception 0xc0000005[^~]*stack words from rsp[^~]*data at stack words that point outside the stack[^~]*c0ffee0000000000 c0ffee0000000001 c0ffee0000000002 c0ffee0000000003 c0ffee0000000004 c0ffee0000000005 c0ffee0000000006 c0ffee0000000007")
+            PASS_REGULAR_EXPRESSION "FATAL: unhandled exception 0xc0000005.*stack words from rsp.*data at stack words that point outside the stack.*c0ffee0000000000 c0ffee0000000001 c0ffee0000000002 c0ffee0000000003 c0ffee0000000004 c0ffee0000000005 c0ffee0000000006 c0ffee0000000007")
         add_test(NAME windows_crash_without_stack_words COMMAND windows_backtrace_report_tests fault)
         set_tests_properties(windows_crash_without_stack_words PROPERTIES TIMEOUT 20
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:libc>;APS5_CRASH_STACK_BYTES=unset:"
