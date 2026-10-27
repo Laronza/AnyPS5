@@ -1,41 +1,17 @@
+#include "prx/libkernel/include/Api.hpp"
+#include "prx/libc/include/Api.hpp"
 #include "SceTypes.hpp"
 #include "prx/libc/include/general/VabiMacros.hpp"
 #include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
+#include <exception>
+#include <fcntl.h>
 #include <initializer_list>
 #include <sys/mman.h>
-
-struct Iovec {
-    void* base;
-    std::uint64_t length;
-};
-
-struct Msghdr {
-    void* name;
-    std::uint32_t nameLength;
-    Iovec* iov;
-    int iovLength;
-    void* control;
-    std::uint32_t controlLength;
-    int flags;
-};
-
-extern "C" {
-int APS5_VABI socketpair_nid_postfix(int, int, int, int*);
-int APS5_VABI pipe_nid_postfix(int*);
-std::int64_t APS5_VABI sendmsg_nid_postfix(int, const Msghdr*, int);
-std::int64_t APS5_VABI recvmsg_nid_postfix(int, Msghdr*, int);
-std::int64_t APS5_VABI send_nid_postfix(int, const void*, std::uint64_t, int);
-std::int64_t APS5_VABI recv_nid_postfix(int, void*, std::uint64_t, int);
-std::int64_t APS5_VABI read_nid_postfix(int, void*, std::uint64_t);
-std::int64_t APS5_VABI write_nid_postfix(int, const char*, std::int64_t);
-int APS5_VABI fcntl_nid_postfix(int, int, ...);
-int APS5_VABI close_nid_postfix(int);
-int* APS5_VABI __error_nid_postfix();
-}
+#include <sys/socket.h>
+#include <unistd.h>
 
 static void Require(bool value) { if (!value) std::abort(); }
 
@@ -46,6 +22,7 @@ constexpr int SocketLevel = 0xffff;
 constexpr int Rights = 1;
 constexpr int ControlTruncated = 0x20;
 constexpr int ControlCloseOnExec = 0x40000;
+constexpr int Peek = 0x2;
 constexpr int GetDescriptorFlags = 1;
 constexpr std::size_t Header = 16;
 
@@ -68,8 +45,8 @@ static std::array<unsigned char, 64> RightsControl(std::initializer_list<int> de
 }
 
 static std::int64_t SendWith(int socket, const char* text, unsigned char* control, std::size_t controlLength) {
-    Iovec vector{const_cast<char*>(text), std::strlen(text)};
-    Msghdr message{};
+    KernelIovec vector{const_cast<char*>(text), std::strlen(text)};
+    GuestMsghdr message{};
     message.iov = &vector;
     message.iovLength = 1;
     message.control = control;
@@ -87,8 +64,8 @@ struct Received {
 
 static Received ReceiveWith(int socket, std::size_t controlCapacity, int flags = 0) {
     Received result;
-    Iovec vector{result.data.data(), result.data.size()};
-    Msghdr message{};
+    KernelIovec vector{result.data.data(), result.data.size()};
+    GuestMsghdr message{};
     message.iov = &vector;
     message.iovLength = 1;
     message.control = controlCapacity != 0 ? result.control.data() : nullptr;
@@ -174,7 +151,11 @@ static void CheckPassedSockets(const int (&pair)[2]) {
 }
 
 static std::size_t OpenHostDescriptors() {
-    return static_cast<std::size_t>(std::distance(std::filesystem::directory_iterator("/proc/self/fd"), std::filesystem::directory_iterator{}));
+    std::size_t open = 0;
+    for (int descriptor = 0; descriptor < 4096; ++descriptor) {
+        if (::fcntl(descriptor, F_GETFD) != -1) ++open;
+    }
+    return open;
 }
 
 static void CheckTruncatedControl(const int (&pair)[2]) {
@@ -209,8 +190,8 @@ static void CheckFaultedReceive(const int (&pair)[2]) {
     const auto before = OpenHostDescriptors();
     Require(SendWith(pair[0], "ro", control.data(), length) == 2);
     std::array<unsigned char, 64> received{};
-    Iovec vector{page, 16};
-    Msghdr message{};
+    KernelIovec vector{page, 16};
+    GuestMsghdr message{};
     message.iov = &vector;
     message.iovLength = 1;
     message.control = received.data();
@@ -219,6 +200,63 @@ static void CheckFaultedReceive(const int (&pair)[2]) {
     Require(OpenHostDescriptors() == before);
     Require(::munmap(page, 4096) == 0);
     Require(close_nid_postfix(spare[0]) == 0 && close_nid_postfix(spare[1]) == 0);
+}
+
+static void CheckFaultedHeader(const int (&pair)[2]) {
+    int spare[2] = {-1, -1};
+    Require(pipe_nid_postfix(spare) == 0);
+    std::size_t length = 0;
+    auto control = RightsControl({spare[0], spare[1]}, length);
+    auto* page = static_cast<unsigned char*>(::mmap(nullptr, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+    Require(page != MAP_FAILED);
+    std::array<char, 16> data{};
+    std::array<unsigned char, 64> received{};
+    auto* vector = reinterpret_cast<KernelIovec*>(page + 64);
+    *vector = KernelIovec{data.data(), data.size()};
+    auto* message = reinterpret_cast<GuestMsghdr*>(page);
+    *message = GuestMsghdr{};
+    message->iov = vector;
+    message->iovLength = 1;
+    message->control = received.data();
+    message->controlLength = static_cast<std::uint32_t>(received.size());
+    Require(::mprotect(page, 4096, PROT_READ) == 0);
+    const auto before = OpenHostDescriptors();
+    Require(SendWith(pair[0], "hdr", control.data(), length) == 3);
+    Require(recvmsg_nid_postfix(pair[1], message, 0) == -1 && *__error_nid_postfix() == 14);
+    Require(std::memcmp(data.data(), "hdr", 3) == 0);
+    Require(OpenHostDescriptors() == before);
+    Require(::munmap(page, 4096) == 0);
+    Require(close_nid_postfix(spare[0]) == 0 && close_nid_postfix(spare[1]) == 0);
+}
+
+static void CheckFailedInstallation(const int (&pair)[2], bool routeFirst) {
+    int local[2] = {-1, -1};
+    Require(socketpair_nid_postfix(Unix, Stream, 0, local) == 0);
+    const int route = ::socket(AF_ROUTE, SOCK_RAW, 0);
+    Require(route >= 0);
+    const auto before = OpenHostDescriptors();
+    std::size_t length = 0;
+    auto control = routeFirst ? RightsControl({route, local[0]}, length) : RightsControl({local[0], route}, length);
+    Require(SendWith(pair[0], "own", control.data(), length) == 3);
+    Received result;
+    try {
+        result = ReceiveWith(pair[1], Space(2 * sizeof(int)));
+    } catch (const std::exception&) {
+    }
+    if (result.bytes == 3 && result.controlLength == Space(2 * sizeof(int))) {
+        Require(close_nid_postfix(ReceivedDescriptor(result, 0)) == 0 && close_nid_postfix(ReceivedDescriptor(result, 1)) == 0);
+    }
+    Require(OpenHostDescriptors() == before);
+    Require(::close(route) == 0);
+    Require(close_nid_postfix(local[0]) == 0 && close_nid_postfix(local[1]) == 0);
+}
+
+static void CheckPlainPeek(const int (&pair)[2]) {
+    Require(SendWith(pair[0], "peek", nullptr, 0) == 4);
+    const auto peeked = ReceiveWith(pair[1], Space(sizeof(int)), Peek);
+    Require(peeked.bytes == 4 && std::memcmp(peeked.data.data(), "peek", 4) == 0 && peeked.controlLength == 0);
+    const auto read = ReceiveWith(pair[1], Space(sizeof(int)));
+    Require(read.bytes == 4 && std::memcmp(read.data.data(), "peek", 4) == 0 && read.controlLength == 0);
 }
 
 static void CheckRefusedControl(const int (&pair)[2]) {
@@ -244,6 +282,10 @@ int main() {
     CheckPassedSockets(pair);
     CheckTruncatedControl(pair);
     CheckFaultedReceive(pair);
+    CheckFaultedHeader(pair);
+    CheckFailedInstallation(pair, false);
+    CheckFailedInstallation(pair, true);
+    CheckPlainPeek(pair);
     CheckRefusedControl(pair);
     Require(close_nid_postfix(pair[0]) == 0 && close_nid_postfix(pair[1]) == 0);
 }

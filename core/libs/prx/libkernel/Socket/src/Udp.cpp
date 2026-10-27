@@ -1649,16 +1649,10 @@ int GuestFromHostSocket(int domain) {
 int GuestFromHostSocketType(int type) {
     return type == SOCK_STREAM ? 1 : type == SOCK_DGRAM ? 2 : type == SOCK_SEQPACKET ? 5 : -1;
 }
-void ClosePassed(const std::vector<int>& passed) {
-    for (const int number : passed) {
-        if (GuestSockets::IsOpen(number)) GuestSockets::Close(number);
-        else ::close(number);
-    }
-}
-int InstallPassed(int native, bool closeOnExec) {
+std::shared_ptr<Socket> PassedSocket(int native) {
     struct stat status{};
     if (::fstat(native, &status) != 0) throw std::runtime_error("recvmsg: a received descriptor cannot be queried, errno " + std::to_string(errno));
-    if (!S_ISSOCK(status.st_mode)) return native;
+    if (!S_ISSOCK(status.st_mode)) return nullptr;
     sockaddr_storage address{};
     socklen_t addressLength = sizeof(address);
     int type = 0;
@@ -1669,14 +1663,52 @@ int InstallPassed(int native, bool closeOnExec) {
     const int family = GuestFromHostSocket(domain);
     const int guestType = GuestFromHostSocketType(type);
     if (family < 0 || guestType < 0) throw std::runtime_error("recvmsg: a received socket of host domain " + std::to_string(domain) + " and type " + std::to_string(type) + " is not supported");
-    const int number = Install(std::make_shared<Socket>(native, family, guestType));
-    if (number < 0) return -1;
-    if (closeOnExec) {
-        std::lock_guard lock(socketsMutex);
-        closeOnExecDescriptors.insert(number);
-    }
-    return number;
+    return std::make_shared<Socket>(native, family, guestType);
 }
+class ReceivedRights {
+public:
+    ReceivedRights() = default;
+    ReceivedRights(const ReceivedRights&) = delete;
+    ReceivedRights& operator=(const ReceivedRights&) = delete;
+    ~ReceivedRights() { Close(); }
+    void Hold(int native) { natives.push_back(native); }
+    int Install(bool closeOnExec) {
+        while (!natives.empty()) {
+            auto socket = PassedSocket(natives.front());
+            const int native = natives.front();
+            natives.erase(natives.begin());
+            if (!socket) {
+                numbers.push_back(native);
+                continue;
+            }
+            const int number = ::Install(std::move(socket));
+            if (number < 0) return *__error_nid_postfix();
+            numbers.push_back(number);
+            if (closeOnExec) {
+                std::lock_guard lock(socketsMutex);
+                closeOnExecDescriptors.insert(number);
+            }
+        }
+        return 0;
+    }
+    const std::vector<int>& Numbers() const { return numbers; }
+    void Close() {
+        for (const int number : numbers) {
+            if (GuestSockets::IsOpen(number)) GuestSockets::Close(number);
+            else ::close(number);
+        }
+        for (const int native : natives) ::close(native);
+        numbers.clear();
+        natives.clear();
+    }
+    void Commit() {
+        numbers.clear();
+        natives.clear();
+    }
+private:
+    std::vector<int> natives;
+    std::vector<int> numbers;
+};
 #endif
 std::int64_t APS5_VABI sendmsg_nid_postfix(int descriptor, const GuestMsghdr* message, int flags) {
     const auto total = MessageLength(message);
@@ -1814,8 +1846,7 @@ std::int64_t APS5_VABI recvmsg_nid_postfix(int descriptor, GuestMsghdr* message,
 #ifdef _WIN32
     const bool passing = false;
 #else
-    const bool passing = socket->family == GuestUnix && header.control && header.controlLength;
-    if (passing && (flags & GuestPeek) != 0) throw std::runtime_error("recvmsg: MSG_PEEK with a control buffer on a Unix socket is not implemented");
+    const bool passing = socket->family == GuestUnix && header.control && header.controlLength && (flags & GuestPeek) == 0;
 #endif
     if ((flags & ~(GuestReceiveFlags | (passing ? GuestControlCloseOnExec : 0))) != 0) return Fail(45);
     const bool records = socket->type == 2 || socket->type == 5;
@@ -1829,14 +1860,8 @@ std::int64_t APS5_VABI recvmsg_nid_postfix(int descriptor, GuestMsghdr* message,
     socklen_t size = 0;
     std::int64_t received = 0;
 #ifndef _WIN32
-    std::vector<int> passed;
+    ReceivedRights rights;
     bool controlTruncated = false;
-    const auto faulted = [&passed] {
-        ClosePassed(passed);
-        return Fail(14);
-    };
-#else
-    const auto faulted = [] { return Fail(14); };
 #endif
     const bool shut = ReceiveShut(*socket);
     std::vector<unsigned char> stamps;
@@ -1869,24 +1894,13 @@ std::int64_t APS5_VABI recvmsg_nid_postfix(int descriptor, GuestMsghdr* message,
                 for (std::size_t index = 0; index < count; ++index) {
                     int handed = -1;
                     std::memcpy(&handed, CMSG_DATA(header) + index * sizeof(int), sizeof(handed));
-                    passed.push_back(handed);
+                    if constexpr (receiveCloseOnExec == 0) {
+                        if ((flags & GuestControlCloseOnExec) != 0) ::fcntl(handed, F_SETFD, FD_CLOEXEC);
+                    }
+                    rights.Hold(handed);
                 }
             }
-            if constexpr (receiveCloseOnExec == 0) {
-                if ((flags & GuestControlCloseOnExec) != 0) {
-                    for (const int handed : passed) ::fcntl(handed, F_SETFD, FD_CLOEXEC);
-                }
-            }
-            for (std::size_t index = 0; index < passed.size(); ++index) {
-                const int number = InstallPassed(passed[index], (flags & GuestControlCloseOnExec) != 0);
-                if (number < 0) {
-                    const int error = *__error_nid_postfix();
-                    for (std::size_t rest = index; rest < passed.size(); ++rest) ::close(passed[rest]);
-                    passed.resize(index);
-                    return Fail(error);
-                }
-                passed[index] = number;
-            }
+            if (const int error = rights.Install((flags & GuestControlCloseOnExec) != 0)) return Fail(error);
         } else
 #endif
         received = ::recvfrom(socket->value, buffer.data(), static_cast<int>(buffer.size()),
@@ -1917,7 +1931,7 @@ std::int64_t APS5_VABI recvmsg_nid_postfix(int descriptor, GuestMsghdr* message,
     for (const auto& vector : vectors) {
         if (offset >= static_cast<std::size_t>(received)) break;
         const auto count = std::min<std::size_t>(vector.length, static_cast<std::size_t>(received) - offset);
-        if (!WriteGuest(vector.base, buffer.data() + offset, count)) return faulted();
+        if (!WriteGuest(vector.base, buffer.data() + offset, count)) return Fail(14);
         offset += count;
     }
     if (header.name) {
@@ -1929,11 +1943,12 @@ std::int64_t APS5_VABI recvmsg_nid_postfix(int descriptor, GuestMsghdr* message,
         } else {
             header.nameLength = 0;
         }
-        if (!WriteGuest(header.name, address, header.nameLength)) return faulted();
-        if (!WriteGuest(&message->nameLength, &header.nameLength, sizeof(header.nameLength))) return faulted();
+        if (!WriteGuest(header.name, address, header.nameLength)) return Fail(14);
+        if (!WriteGuest(&message->nameLength, &header.nameLength, sizeof(header.nameLength))) return Fail(14);
     }
     header.controlLength = 0;
 #ifndef _WIN32
+    const auto& passed = rights.Numbers();
     if (passing && !passed.empty()) {
         const auto bytes = passed.size() * sizeof(int);
         std::vector<unsigned char> record(GuestControlSpace(bytes), 0);
@@ -1946,8 +1961,8 @@ std::int64_t APS5_VABI recvmsg_nid_postfix(int descriptor, GuestMsghdr* message,
         if (fits && WriteGuest(header.control, record.data(), record.size())) {
             header.controlLength = static_cast<std::uint32_t>(record.size());
         } else {
-            if (fits) return faulted();
-            ClosePassed(passed);
+            if (fits) return Fail(14);
+            rights.Close();
             controlTruncated = true;
         }
     }
@@ -1961,6 +1976,9 @@ std::int64_t APS5_VABI recvmsg_nid_postfix(int descriptor, GuestMsghdr* message,
     }
     constexpr auto results = offsetof(GuestMsghdr, controlLength);
     if (!WriteGuest(reinterpret_cast<char*>(message) + results, reinterpret_cast<const char*>(&header) + results, sizeof(header) - results)) return Fail(14);
+#ifndef _WIN32
+    rights.Commit();
+#endif
     return received;
 }
 
