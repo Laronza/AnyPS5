@@ -512,11 +512,6 @@ int APS5_VABI sceUserServiceSetDiscPlayerFlag(void) {
     return 0;
 }
 
-int APS5_VABI sceUserServiceSetVoiceAgentEnableByButton(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI sceUserServiceGetSharePlayFramerateHost(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
@@ -717,11 +712,6 @@ int APS5_VABI sceUserServiceGetParentalDvd(void) {
     return 0;
 }
 
-int APS5_VABI sceUserServiceSetHmd2CinematicAudioRotation(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI sceUserServiceSetSparkEqProfile(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
@@ -862,11 +852,6 @@ int APS5_VABI sceUserServiceGetKeyRepeatStartingTime(void) {
     return 0;
 }
 
-int APS5_VABI sceUserServiceSetNotificationSettings_4(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI sceUserServiceSetGlsLiveQuality(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
@@ -893,11 +878,6 @@ int APS5_VABI sceUserServiceSetHrtf(void) {
 }
 
 int APS5_VABI sceUserServiceSetGlsTtsFlags(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceUserServiceGetNotificationSettings_4(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
 }
@@ -1298,11 +1278,6 @@ int APS5_VABI sceUserServiceGetGlsCameraEliminationLevel(void) {
 }
 
 int APS5_VABI sceUserServiceGetGlsBroadcastersCommentColor(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceUserServiceSetHmd2HideCameraImage(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
 }
@@ -1737,11 +1712,6 @@ int APS5_VABI sceUserServiceGetHrtf(void) {
     return 0;
 }
 
-int APS5_VABI sceUserServiceGetPartyGameIconInstallHistory(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI sceUserServiceSetAppearOfflineSetting(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
@@ -2027,11 +1997,6 @@ int APS5_VABI sceUserServiceSetGamePresets(void) {
     return 0;
 }
 
-int APS5_VABI sceUserServiceSetPartyGameIconInstallHistory(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI sceUserServiceSetNotificationSettings(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
@@ -2103,11 +2068,6 @@ int APS5_VABI sceUserServiceGetAgeVerified(void) {
 }
 
 int APS5_VABI sceUserServiceSetGlsCameraEdgeLevel(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceUserServiceSetUserWithHearingAssist(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
 }
@@ -2237,11 +2197,6 @@ int APS5_VABI sceUserServiceSetCaptureStatus3(void) {
     return 0;
 }
 
-int APS5_VABI sceUserServiceSetIsPersonalizedHrtfEnabled(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI sceUserServiceSetSparkEqIndex(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
@@ -2313,11 +2268,6 @@ int APS5_VABI sceUserServiceSetHearingAssistAudiogramData(void) {
 }
 
 int APS5_VABI sceUserServiceSetSaveDataAutoSync(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceUserServiceSetProControllerBtAddress(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
 }
@@ -2507,11 +2457,6 @@ int APS5_VABI sceUserServiceSetEventCalendarType(void) {
     return 0;
 }
 
-int APS5_VABI sceUserServiceSetAccessibilityKeyremapEnableAston(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI sceUserServiceSetProControllerAlreadyNoticed(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
@@ -2643,11 +2588,6 @@ int APS5_VABI sceUserServiceGetNpAuthErrorFlag(void) {
 }
 
 int APS5_VABI sceUserServiceGetGlsIsCameraHidden(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
-int APS5_VABI sceUserServiceGetPartyChatTranscriptionVoiceType(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
 }
