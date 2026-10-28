@@ -124,9 +124,17 @@ int main() {
     Require(Throws([&] { sceHttp2RemoveRequestHeader(sent, "X-Sent"); }));
     Require(Throws([&] { sceHttp2SetAuthInfoCallback(sent, nullptr, nullptr); }));
     Require(Throws([&] { sceHttp2SetPreSendCallback(sent, nullptr, nullptr); }));
+    Require(Throws([&] { sceHttp2SetRequestContentLength(sent, 0); }));
     Require(sceHttp2DeleteRequest(sent) == 0);
 
+    const int sized = sceHttp2CreateRequestWithURL(tmpl, "POST", "https://localhost/", 0);
+    Require(sized > 0);
+    Require(sceHttp2SetRequestContentLength(sized, 42) == 0);
+    Require(sceHttp2DeleteRequest(sized) == 0);
+    Require(sceHttp2SetRequestContentLength(sized, 42) == InvalidId);
+
     Require(sceHttp2DeleteRequest(request) == 0);
+    Require(sceHttp2SetRequestContentLength(tmpl, 42) == 0);
     const int invalidIds[] = {0, -1, 0x7fffffff, request, context, box};
     for (const int invalid : invalidIds) {
         int value = -2;
@@ -139,6 +147,7 @@ int main() {
         Require(sceHttp2SetAuthInfoCallback(invalid, nullptr, nullptr) == InvalidId);
         Require(sceHttp2SetPreSendCallback(invalid, nullptr, nullptr) == InvalidId);
         if (invalid != context) Require(sceHttp2AuthCacheFlush(invalid) == InvalidId);
+        if (invalid != context && invalid != box) Require(sceHttp2SetRequestContentLength(invalid, 42) == InvalidId);
         Require(sceHttp2RedirectCacheFlush(invalid) == 0);
     }
 
