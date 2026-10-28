@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -44,6 +45,57 @@ void overshootDoesNotAccumulateTests() {
     }
 }
 
+void stallDoesNotBurstTests() {
+    constexpr std::uint64_t milliFps = 30000;
+    const Nanos period = exactNanos(1, milliFps);
+    for (const Nanos stall : {Nanos{50'000'000}, Nanos{1'000'000'000}, Nanos{3'600'000'000'000}}) {
+        FramePacer pacer(milliFps);
+        Nanos now = 0;
+        pacer.Admit(now);
+        for (int frame = 1; frame <= 10; ++frame) now += pacer.Admit(now);
+        now += stall;
+        std::vector<Nanos> presents;
+        for (int frame = 0; frame < 200; ++frame) {
+            now += pacer.Admit(now);
+            presents.push_back(now);
+            now += 1'000'000;
+        }
+        for (std::size_t index = 0; index + 2 < presents.size(); ++index) {
+            require(presents[index + 2] - presents[index] >= period - 1, "after a stall of " + std::to_string(stall) + " ns three presents fall within " + std::to_string(presents[index + 2] - presents[index]) + " ns at frame " + std::to_string(index));
+        }
+        require(presents[presents.size() - 1] - presents[2] >= static_cast<Nanos>(presents.size() - 3) * period - 2, "frames after a stall of " + std::to_string(stall) + " ns are not paced at the limit");
+    }
+}
+
+void lateFrameIsMadeUpTests() {
+    constexpr std::uint64_t milliFps = 30000;
+    const Nanos period = exactNanos(1, milliFps);
+    FramePacer pacer(milliFps);
+    Nanos now = 0;
+    pacer.Admit(now);
+    for (std::uint64_t frame = 1; frame <= 4; ++frame) now += pacer.Admit(now);
+    require(now == exactNanos(4, milliFps), "the frames before the late one are off the schedule");
+    now += period + period / 2;
+    require(pacer.Admit(now) == 0, "a late frame is delayed");
+    const Nanos lateAt = now;
+    const Nanos wait = pacer.Admit(now);
+    require(wait == exactNanos(6, milliFps) - lateAt, "the frame after one late by half a period waits " + std::to_string(wait) + " ns instead of making up the delay");
+    now += wait;
+    require(now == exactNanos(6, milliFps), "the schedule did not resume after a late frame");
+}
+
+void slowGameIsNeverDelayedTests() {
+    for (const std::uint64_t milliFps : {30000ull, 59940ull, 144000ull}) {
+        FramePacer pacer(milliFps);
+        const Nanos period = exactNanos(1, milliFps);
+        Nanos now = 5'000'000'000;
+        for (int frame = 0; frame < 10'000; ++frame) {
+            require(pacer.Admit(now) == 0, "a game slower than the limit " + std::to_string(milliFps) + " is delayed at frame " + std::to_string(frame));
+            now += period + period / 1000 + 1;
+        }
+    }
+}
+
 void zeroLimitTests() {
     bool refused = false;
     try {
@@ -60,6 +112,9 @@ int main() {
     try {
         deadlineArithmeticTests();
         overshootDoesNotAccumulateTests();
+        stallDoesNotBurstTests();
+        lateFrameIsMadeUpTests();
+        slowGameIsNeverDelayedTests();
         zeroLimitTests();
         std::puts("frame limit tests passed");
         return 0;
