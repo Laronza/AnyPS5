@@ -641,6 +641,7 @@ void VideoOutDriver::processFlip(FlipRequest& req) {
                 return;
             }
         }
+        timing.Mark("frame_limit");
         OnMainThread([&] { window.Ensure(req.width, req.height); });
         const auto extensions = windowExtensions(window.Handle());
         const AgcDriver::PresentationWindow target{window.Handle(), extensions, &createWindowSurface, &windowDrawableSize, req.width, req.height, req.timing};
