@@ -17,6 +17,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
+#ifdef __linux__
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
+#endif
 
 static void Require(bool value) { if (!value) std::abort(); }
 static constexpr int DuplicateCommand = 0;
@@ -523,6 +527,22 @@ static void HostSocketFlags() {
 }
 #endif
 
+#ifdef __linux__
+static void HostOnlyDescriptorsAreNotOpen() {
+    const int descriptors[] = {::epoll_create1(EPOLL_CLOEXEC), ::eventfd(0, EFD_CLOEXEC)};
+    for (const int descriptor : descriptors) {
+        Require(descriptor >= 0);
+        RequireFailure(fcntl_nid_postfix(descriptor, GetDescriptorFlags), GuestEbadf);
+        RequireFailure(fcntl_nid_postfix(descriptor, GetFlags), GuestEbadf);
+        RequireFailure(fcntl_nid_postfix(descriptor, SetDescriptorFlags, 0), GuestEbadf);
+        int available = 0;
+        RequireFailure(ioctl_nid_postfix(descriptor, ReadableRequest, &available), GuestEbadf);
+        Require(::fcntl(descriptor, F_GETFD) == FD_CLOEXEC);
+        Require(::close(descriptor) == 0);
+    }
+}
+#endif
+
 static void StandardInputFlags() {
     const int flags = fcntl_nid_postfix(0, GetFlags);
     Require(flags >= 0);
@@ -542,6 +562,9 @@ int main() {
     PipeFlagsRoundTrip();
 #ifndef _WIN32
     HostSocketFlags();
+#endif
+#ifdef __linux__
+    HostOnlyDescriptorsAreNotOpen();
 #endif
     StandardInputFlags();
     return 0;
