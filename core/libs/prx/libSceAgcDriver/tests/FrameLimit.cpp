@@ -96,6 +96,80 @@ void slowGameIsNeverDelayedTests() {
     }
 }
 
+struct FakeTime {
+    Nanos now = 0;
+    Nanos overshoot = 0;
+    std::vector<Nanos> requests;
+    bool refuse = false;
+
+    auto clock() { return [this] { return now; }; }
+    auto sleeper() {
+        return [this](Nanos length) {
+            requests.push_back(length);
+            now += length + overshoot;
+            return !refuse;
+        };
+    }
+};
+
+void paceTests() {
+    constexpr std::uint64_t milliFps = 30000;
+    FramePacer pacer(milliFps);
+    FakeTime time;
+    time.now = 777;
+    require(pacer.Pace(time.clock(), time.sleeper(), 20'000'000) && time.requests.empty(), "the first frame of a run sleeps");
+    require(pacer.Pace(time.clock(), time.sleeper(), 20'000'000), "a completed wait reports an abandoned one");
+    require(time.requests.size() == 2 && time.requests[0] == 20'000'000 && time.requests[1] == exactNanos(1, milliFps) - 20'000'000, "a wait of one period is not cut into a 20 ms slice and the rest");
+    require(time.now == 777 + exactNanos(1, milliFps), "the wait ended at " + std::to_string(time.now - 777) + " ns instead of one period");
+    time.requests.clear();
+    time.overshoot = 3'000'000;
+    pacer.Pace(time.clock(), time.sleeper(), 1'000'000'000);
+    require(time.requests.size() == 1 && time.now >= 777 + exactNanos(2, milliFps), "an oversleep is waited for again");
+    time.requests.clear();
+    const Nanos beforeNext = time.now;
+    pacer.Pace(time.clock(), time.sleeper(), 1'000'000'000);
+    require(time.requests.size() == 1 && time.requests[0] == 777 + exactNanos(3, milliFps) - beforeNext, "the frame after an oversleep does not wait for its own deadline on the original schedule");
+}
+
+void paceOvershootTests() {
+    FramePacer pacer(30000);
+    FakeTime time;
+    pacer.Pace(time.clock(), time.sleeper(), 5'000'000);
+    time.overshoot = 3'000'000;
+    pacer.Pace(time.clock(), time.sleeper(), 5'000'000);
+    require(time.now >= exactNanos(1, 30000) && time.now < exactNanos(1, 30000) + 8'000'000, "sleeping in slices that overshoot by 3 ms ends " + std::to_string(time.now - exactNanos(1, 30000)) + " ns after the deadline");
+    require(time.requests.size() <= 5, "a sleeper that overshoots is asked " + std::to_string(time.requests.size()) + " times for one wait");
+}
+
+void paceAbandonTests() {
+    FramePacer pacer(30000);
+    FakeTime time;
+    pacer.Pace(time.clock(), time.sleeper(), 5'000'000);
+    time.refuse = true;
+    require(!pacer.Pace(time.clock(), time.sleeper(), 5'000'000), "a sleeper that refuses does not abandon the wait");
+    require(time.requests.size() == 1, "the wait goes on after a sleeper refused");
+}
+
+void paceSlowGameTests() {
+    FramePacer pacer(60000);
+    FakeTime time;
+    for (int frame = 0; frame < 1000; ++frame) {
+        pacer.Pace(time.clock(), time.sleeper(), 5'000'000);
+        time.now += 20'000'000;
+    }
+    require(time.requests.empty(), "a game at 50 frames per second slept " + std::to_string(time.requests.size()) + " times under a limit of 60");
+}
+
+void paceHighLimitTests() {
+    FramePacer pacer(100'000'000);
+    FakeTime time;
+    pacer.Pace(time.clock(), time.sleeper(), 1'000'000);
+    for (int frame = 0; frame < 1000; ++frame) {
+        pacer.Pace(time.clock(), time.sleeper(), 1'000'000);
+        require(time.now == exactNanos(static_cast<std::uint64_t>(frame) + 1, 100'000'000), "a limit of 100000 frames per second misses frame " + std::to_string(frame));
+    }
+}
+
 void resetTests() {
     FramePacer pacer(30000);
     pacer.Admit(0);
@@ -125,6 +199,11 @@ int main() {
         lateFrameIsMadeUpTests();
         slowGameIsNeverDelayedTests();
         zeroLimitTests();
+        paceTests();
+        paceOvershootTests();
+        paceAbandonTests();
+        paceSlowGameTests();
+        paceHighLimitTests();
         resetTests();
         std::puts("frame limit tests passed");
         return 0;
