@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -47,6 +48,11 @@ inline std::optional<FrameLimit> ParseFrameLimit(const char* text) {
     if (milli == 0) return std::nullopt;
     if (milli < 500 || milli > MaxMilli) throw refused();
     return FrameLimit{milli};
+}
+
+inline const std::optional<FrameLimit>& ConfiguredFrameLimit() {
+    static const std::optional<FrameLimit> configured = ParseFrameLimit(std::getenv("ANYPS5_FPS_LIMIT"));
+    return configured;
 }
 
 class FramePacer {
