@@ -43,6 +43,8 @@ static constexpr int ReadOnly = 0;
 static constexpr int WriteOnly = 1;
 static constexpr int ReadWrite = 2;
 static constexpr int NonBlocking = 4;
+static constexpr int CreateFlag = 0x200;
+static constexpr int ExclusiveFlag = 0x800;
 static constexpr int Append = 8;
 static constexpr int ReadAheadFlag = 0x200;
 static constexpr int CreateReadWrite = 0x202;
@@ -528,7 +530,7 @@ static void HostSocketFlags() {
 #endif
 
 #ifdef __linux__
-static void HostOnlyDescriptorsAreNotOpen() {
+static void HostOnlyDescriptorsAreNotOpenAndSharedMemoryIs() {
     const int descriptors[] = {::epoll_create1(EPOLL_CLOEXEC), ::eventfd(0, EFD_CLOEXEC)};
     for (const int descriptor : descriptors) {
         Require(descriptor >= 0);
@@ -540,6 +542,15 @@ static void HostOnlyDescriptorsAreNotOpen() {
         Require(::fcntl(descriptor, F_GETFD) == FD_CLOEXEC);
         Require(::close(descriptor) == 0);
     }
+    const std::string name = "/anyps5-fcntl-shm-" + std::to_string(::getpid());
+    static_cast<void>(shm_unlink_nid_postfix(name.c_str()));
+    const int shared = shm_open_nid_postfix(name.c_str(), ReadWrite | CreateFlag | ExclusiveFlag, 0600);
+    Require(shared >= 0);
+    Require(fcntl_nid_postfix(shared, GetFlags) == ReadWrite);
+    Require(fcntl_nid_postfix(shared, SetDescriptorFlags, 1) == 0);
+    Require(fcntl_nid_postfix(shared, GetDescriptorFlags) == 1);
+    Require(close_nid_postfix(shared) == 0);
+    Require(shm_unlink_nid_postfix(name.c_str()) == 0);
 }
 #endif
 
@@ -564,7 +575,7 @@ int main() {
     HostSocketFlags();
 #endif
 #ifdef __linux__
-    HostOnlyDescriptorsAreNotOpen();
+    HostOnlyDescriptorsAreNotOpenAndSharedMemoryIs();
 #endif
     StandardInputFlags();
     return 0;
