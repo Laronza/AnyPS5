@@ -978,6 +978,8 @@ void PerformanceOverlay::sampleDetails(OverlayStatistics::Clock::time_point at, 
         detailSample.hostImportBytes = OverlayMemory{imports.liveBytes, imports.liveBytes + Graphics::HostImportBudgetRemaining(context)};
     }
     detailSample.presentMode = std::string(OverlayPresentModeName(info.presentMode));
+    if (info.fpsLimit > 0.0) detailSample.fpsLimit = info.fpsLimit;
+    else detailSample.fpsLimit.reset();
     sampleTrace(at);
     detail.base = std::move(now);
     detail.repeats = 0;
