@@ -96,6 +96,15 @@ void slowGameIsNeverDelayedTests() {
     }
 }
 
+void resetTests() {
+    FramePacer pacer(30000);
+    pacer.Admit(0);
+    require(pacer.Admit(0) == exactNanos(1, 30000), "the second frame at once is not delayed by a period");
+    pacer.Reset();
+    require(pacer.Admit(0) == 0, "a frame after a reset is delayed");
+    require(pacer.Admit(0) == exactNanos(1, 30000), "the schedule does not restart after a reset");
+}
+
 void zeroLimitTests() {
     bool refused = false;
     try {
@@ -116,6 +125,7 @@ int main() {
         lateFrameIsMadeUpTests();
         slowGameIsNeverDelayedTests();
         zeroLimitTests();
+        resetTests();
         std::puts("frame limit tests passed");
         return 0;
     } catch (const std::exception& error) {
