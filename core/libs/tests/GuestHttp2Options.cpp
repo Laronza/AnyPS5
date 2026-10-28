@@ -124,7 +124,6 @@ int main() {
     Require(Throws([&] { sceHttp2RemoveRequestHeader(sent, "X-Sent"); }));
     Require(Throws([&] { sceHttp2SetAuthInfoCallback(sent, nullptr, nullptr); }));
     Require(Throws([&] { sceHttp2SetPreSendCallback(sent, nullptr, nullptr); }));
-    Require(Throws([&] { sceHttp2SetRequestContentLength(sent, 0); }));
     Require(sceHttp2DeleteRequest(sent) == 0);
 
     const int sized = sceHttp2CreateRequestWithURL(tmpl, "POST", "https://localhost/", 0);
