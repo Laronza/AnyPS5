@@ -30,6 +30,17 @@ public:
 
     void Reset() { started = false; }
 
+    template <class TClock, class TSleep>
+    bool Pace(TClock&& clock, TSleep&& sleep, Nanos longestSleep) {
+        const Nanos now = clock();
+        const Nanos deadline = now + Admit(now);
+        const Nanos slice = std::max<Nanos>(longestSleep, 1);
+        for (Nanos remaining = deadline - now; remaining > 0; remaining = deadline - clock()) {
+            if (!sleep(std::min(remaining, slice))) return false;
+        }
+        return true;
+    }
+
 private:
     static constexpr std::uint64_t MilliNanosPerSecond = 1'000'000'000'000ull;
 
