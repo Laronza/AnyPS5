@@ -28,6 +28,8 @@ public:
         return wait;
     }
 
+    void Reset() { started = false; }
+
 private:
     static constexpr std::uint64_t MilliNanosPerSecond = 1'000'000'000'000ull;
 
