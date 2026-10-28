@@ -1,4 +1,5 @@
 #include "prx/libSceAgcDriver/Execution/include/FrameLimit.hpp"
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <stdexcept>
@@ -179,6 +180,44 @@ void resetTests() {
     require(pacer.Admit(0) == exactNanos(1, 30000), "the schedule does not restart after a reset");
 }
 
+std::string refusal(const char* text) {
+    try {
+        AgcDriver::ParseFrameLimit(text);
+    } catch (const std::runtime_error& error) {
+        return error.what();
+    }
+    return {};
+}
+
+std::uint64_t parsedMilli(const char* text) {
+    const auto limit = AgcDriver::ParseFrameLimit(text);
+    require(limit.has_value(), std::string("'") + text + "' is read as no limit");
+    return limit->milliFramesPerSecond;
+}
+
+void parseAcceptedTests() {
+    require(parsedMilli("30") == 30000 && parsedMilli("60") == 60000 && parsedMilli("144") == 144000, "a whole number of frames per second is misread");
+    require(parsedMilli("59.94") == 59940 && parsedMilli("119.88") == 119880 && parsedMilli("29.97") == 29970, "a decimal limit is misread");
+    require(parsedMilli("0.5") == 500 && parsedMilli("0.500") == 500 && parsedMilli("1.25") == 1250 && parsedMilli("7.001") == 7001, "a limit below 10 is misread");
+    require(parsedMilli("100000") == 100'000'000 && parsedMilli("1000000") == 1'000'000'000 && parsedMilli("1000000.000") == 1'000'000'000, "a very high limit is misread");
+    require(parsedMilli("030") == 30000 && parsedMilli("30.000") == 30000, "leading or trailing zeros change the limit");
+    require(std::abs(AgcDriver::ParseFrameLimit("59.94")->FramesPerSecond() - 59.94) < 1e-9, "the limit in frames per second is not the parsed value");
+}
+
+void parseDisabledTests() {
+    for (const char* text : {"0", "00", "0.0", "0.000", "000.00"}) require(!AgcDriver::ParseFrameLimit(text).has_value(), std::string("'") + text + "' is a limit");
+    require(!AgcDriver::ParseFrameLimit(nullptr).has_value() && !AgcDriver::ParseFrameLimit("").has_value(), "an unset or empty ANYPS5_FPS_LIMIT is a limit");
+}
+
+void parseRefusedTests() {
+    for (const char* text : {"-30", "+30", "-0", "abc", "30fps", "30 fps", " 30", "30 ", "1e2", "0x20", "30.", ".5", ".", "30.1234", "30.0001", "0.4", "0.499", "0.001", "1000000.001", "1000001", "99999999999999999999", "18446744073709551616", "nan", "inf", "30,5", "3 0", "30\n", "\xd9\xa3\xd9\xa0", "0.5.0", "--5"}) {
+        const auto message = refusal(text);
+        require(!message.empty(), std::string("'") + text + "' was accepted");
+        require(message.find("ANYPS5_FPS_LIMIT") != std::string::npos, std::string("the error for '") + text + "' does not name the variable: " + message);
+        require(message.find(std::string("'") + text + "'") != std::string::npos, std::string("the error for '") + text + "' does not quote it: " + message);
+    }
+}
+
 void zeroLimitTests() {
     bool refused = false;
     try {
@@ -199,6 +238,9 @@ int main() {
         lateFrameIsMadeUpTests();
         slowGameIsNeverDelayedTests();
         zeroLimitTests();
+        parseAcceptedTests();
+        parseDisabledTests();
+        parseRefusedTests();
         paceTests();
         paceOvershootTests();
         paceAbandonTests();
