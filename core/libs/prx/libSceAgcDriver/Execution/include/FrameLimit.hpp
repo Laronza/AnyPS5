@@ -24,7 +24,7 @@ public:
             carry = 0;
         }
         const Nanos wait = std::max<Nanos>(next - now, 0);
-        next += step();
+        next = std::max(next + step(), now + wait);
         return wait;
     }
 
