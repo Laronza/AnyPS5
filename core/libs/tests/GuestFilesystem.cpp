@@ -1429,6 +1429,8 @@ int main() {
     FileStat directoryStatus{};
     Require(flaggedDirectory >= 0 && sceKernelFstat(flaggedDirectory, &directoryStatus) == 0 && directoryStatus.st_blksize == 0x10000);
     Require(sceKernelStat(rootName.c_str(), &directoryStatus) == 0 && directoryStatus.st_blksize == 0x10000);
+    FileStat fileStatus{};
+    Require(sceKernelStat(presentName.c_str(), &fileStatus) == 0 && fileStatus.st_blksize != 0x10000);
     Require(sceKernelClose(flaggedDirectory) == 0);
     std::vector<char> entries(4096);
     for (const auto& directoryName : {std::string("/"), std::string("."), rootName + "/", rootName + "/.."}) {
