@@ -43,10 +43,6 @@ bool SameEnvironment(const Environment& lhs, const Environment& rhs) {
     return std::equal(lhs.x87.begin(), lhs.x87.begin() + (pointers ? 7 : 3), rhs.x87.begin()) && lhs.sse == rhs.sse;
 }
 
-bool SameControlState(const Environment& left, const Environment& right) {
-    return left.x87[0] == right.x87[0] && left.x87[1] == right.x87[1] && left.sse == right.sse;
-}
-
 void Require(bool value, const char* message) {
     if (!value) {
         std::fprintf(stderr, "floating-point environment: %s\n", message);
@@ -295,7 +291,7 @@ void CheckHoldExcept(HoldExcept hold) {
     try { hold(nullptr); } catch (const std::invalid_argument&) { threw = true; }
     Require(threw, "feholdexcept rejects null storage");
     const auto afterNull = ReadEnvironment();
-    Require(SameControlState(original, afterNull), "null feholdexcept preserves the environment");
+    Require(SameEnvironment(original, afterNull), "null feholdexcept preserves the environment");
 #ifdef _WIN32
     SYSTEM_INFO info{};
     GetSystemInfo(&info);
@@ -338,7 +334,7 @@ void CheckHoldExcept(HoldExcept hold) {
     first.join();
     second.join();
     const auto afterThreads = ReadEnvironment();
-    Require(SameControlState(original, afterThreads), "feholdexcept workers preserve the main environment");
+    Require(SameEnvironment(original, afterThreads), "feholdexcept workers preserve the main environment");
 }
 
 int main(int argc, char** argv) {
