@@ -241,11 +241,6 @@ int APS5_VABI _ZN3sce2np12HttpTemplate19SetAuthInfoCallbackEPFii15SceHttpAuthTyp
     return 0;
 }
 
-int APS5_VABI sceNpUtilParseJid(void) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
-}
-
 int APS5_VABI _ZN3sce2np6ObjectnaEmR16SceNpAllocatorEx(void) {
     NotImplemented_nid_no_patch(__func__);
     return 0;

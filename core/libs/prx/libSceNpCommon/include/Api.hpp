@@ -47,6 +47,13 @@ struct NpIdFull {
     std::uint8_t reserved[8];
 };
 
+struct NpJid {
+    const char* user;
+    const char* domain;
+    const char* resource;
+    std::uint64_t reserved;
+};
+
 struct NpKernelMemory {
     std::uint64_t size;
     std::uint64_t reserved;
@@ -120,7 +127,7 @@ int APS5_VABI sceNpUtilGetTrcNotify(void);
 int APS5_VABI sceNpUtilGetWebApi2FakeRateLimit(void);
 int APS5_VABI sceNpUtilGetWebApi2FakeRateLimitTarget(void);
 int APS5_VABI sceNpUtilGetWebTraceSetting(void);
-int APS5_VABI sceNpUtilJidToNpId(void);
+int APS5_VABI sceNpUtilJidToNpId(NpIdFull* npId, const NpJid* jid);
 int APS5_VABI sceNpAtomicCas32(std::int32_t* value, std::int32_t expected, std::int32_t desired);
 int APS5_VABI sceNpAtomicInc32(std::int32_t* value);
 int APS5_VABI sceNpAtomicDec32(std::int32_t* value);
@@ -264,7 +271,7 @@ int APS5_VABI _ZN3sce2np4Cond4InitEPKcPNS0_5MutexE(void);
 int APS5_VABI _ZN3sce2np3ipc17ServiceIpmiClient10DisconnectEv(void);
 int APS5_VABI _ZN3sce2np3ipc10IpmiClient11IsConnectedEv(void);
 int APS5_VABI _ZN3sce2np12HttpTemplate19SetAuthInfoCallbackEPFii15SceHttpAuthTypePKcPcS5_iPPhPmPiPvESA_(void);
-int APS5_VABI sceNpUtilParseJid(void);
+int APS5_VABI sceNpUtilParseJid(NpJid* jid, const char* text, char* buffer, std::size_t bufferSize, std::size_t* required);
 int APS5_VABI _ZN3sce2np6ObjectnaEmR16SceNpAllocatorEx(void);
 int APS5_VABI _ZN3sce2np9Semaphore6CreateEiiPKc(void);
 int APS5_VABI _ZN3sce2npleERKNS0_4TimeERK10SceRtcTick(void);
