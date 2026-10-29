@@ -390,6 +390,29 @@ class ReleasePackageTests(unittest.TestCase):
                 package_release.windows_runtime(Path(tmp))
 
 
+    def test_native_and_web_zip_timestamps_are_clamped_without_changing_files(self):
+        import os
+        for timestamp, year in ((0, 1980), (7258118400, 2107)):
+            with self.subTest(timestamp=timestamp):
+                web = self.build / "web"
+                web.mkdir(exist_ok=True)
+                for name in package_release.WEB_FILES:
+                    (web / name).parent.mkdir(parents=True, exist_ok=True)
+                    (web / name).write_bytes(b"web fixture")
+                    os.utime(web / name, (timestamp, timestamp))
+                os.utime(self.library, (timestamp, timestamp))
+                before = self.library.stat().st_mtime_ns
+                package_release.package("linux", self.build, self.output, "v1")
+                package_release.package_web(self.build, self.output, "v1", "a" * 40)
+                for asset, member, contents in (("prx-linux-v1.zip", "libs/libc.prx", b"library bytes"),
+                                                 ("web-v1.zip", package_release.WEB_FILES[0], b"web fixture")):
+                    with zipfile.ZipFile(self.output / asset) as archive:
+                        self.assertEqual(archive.getinfo(member).date_time[0], year)
+                        self.assertEqual(archive.read(member), contents)
+                self.assertEqual(self.library.stat().st_mtime_ns, before)
+                self.assertEqual((web / package_release.WEB_FILES[0]).stat().st_mtime, timestamp)
+
+
 
 class DocumentationAssetsTests(unittest.TestCase):
     def test_source_copy_failure_does_not_publish_partial_documents(self):
@@ -549,6 +572,28 @@ class ReleaseNoteDestinationsTests(unittest.TestCase):
                 prepare_release_notes.prepare_notes(source, body, full)
             self.assertEqual(full.read_bytes(), b"previous full notes")
             self.assertEqual(list(body.iterdir()), [])
+
+    def test_symbolic_link_loop_preserves_existing_notes(self):
+        for position in range(3):
+            with self.subTest(position=position), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                paths = [root / name for name in ("notes.json", "body.md", "full.md")]
+                paths[0].write_text(json.dumps({"body": "new release notes"}), encoding="utf-8")
+                paths[1].write_bytes(b"previous body")
+                paths[2].write_bytes(b"previous full notes")
+                paths[position].unlink()
+                try:
+                    paths[position].symlink_to(paths[position].name)
+                except (OSError, NotImplementedError) as error:
+                    self.skipTest(str(error))
+                previous = {path: path.read_bytes() for index, path in enumerate(paths) if index != position}
+                result = subprocess.run([sys.executable, str(Path(prepare_release_notes.__file__)),
+                                         "--input", str(paths[0]), "--body", str(paths[1]), "--full", str(paths[2])],
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertTrue(paths[position].is_symlink())
+                self.assertEqual({path: path.read_bytes() for path in previous}, previous)
 
     @unittest.skipUnless(os.name == "nt", "Windows read-only output semantics")
     def test_readonly_output_preserves_both_note_files(self):
@@ -794,6 +839,25 @@ class ReleaseNotesEdgeCaseTests(unittest.TestCase):
                     self.assertNotIn("Traceback", stderr.getvalue())
                     self.assertEqual(body_path.read_text(encoding="utf-8"), "pre-existing body")
                     self.assertEqual(full_path.read_text(encoding="utf-8"), "pre-existing full")
+
+    def test_main_reports_error_for_json_recursion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            source_path = directory / "source.json"
+            source_path.write_text(json.dumps({"body": "notes"}), encoding="utf-8")
+            body_path = directory / "body.md"
+            body_path.write_text("pre-existing body", encoding="utf-8")
+            full_path = directory / "full.md"
+            full_path.write_text("pre-existing full", encoding="utf-8")
+            stderr = io.StringIO()
+            with patch.object(prepare_release_notes.json, "loads", side_effect=RecursionError("decoder recursion")):
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as error:
+                    prepare_release_notes.main(["--input", str(source_path), "--body", str(body_path), "--full", str(full_path)])
+            self.assertEqual(error.exception.code, 2)
+            self.assertIn("response is too deeply nested", stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+            self.assertEqual(body_path.read_text(encoding="utf-8"), "pre-existing body")
+            self.assertEqual(full_path.read_text(encoding="utf-8"), "pre-existing full")
 
     def test_main_reconfigures_streams(self):
         class Stream:
