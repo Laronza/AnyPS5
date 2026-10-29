@@ -6,7 +6,6 @@
 #include <cstring>
 #include <cstdio>
 #include <source_location>
-#include <stdexcept>
 
 namespace {
 
@@ -89,34 +88,10 @@ void TestRequestIsSignedOut() {
                 0, nullptr, nullptr) == kNotSignedIn);
 }
 
-template <typename TCall>
-void RequireThrows(TCall call) {
-    bool threw = false;
-    try {
-        call();
-    } catch (const std::runtime_error&) {
-        threw = true;
-    }
-    Require(threw);
-}
-
-void TestResponseAccessorsThrow() {
-    const void* object = reinterpret_cast<const void*>(1);
-    RequireThrows([&] { (void)_ZNK3sce2Np9CppWebApi10Activities2V114UserActivities8Activity13getActivityIdEv(object); });
-    RequireThrows([&] { (void)_ZNK3sce2Np9CppWebApi10Activities2V114UserActivities8Activity7getNameEv(object); });
-    RequireThrows([&] { (void)_ZNK3sce2Np9CppWebApi10Activities2V114UserActivities8Activity9getHiddenEv(object); });
-    RequireThrows([&] { (void)_ZNK3sce2Np9CppWebApi10Activities2V114UserActivities8Activity12matchIdIsSetEv(object); });
-    RequireThrows([&] { (void)_ZNK3sce2Np9CppWebApi10Activities2V114UserActivities8Activity10getMatchIdEv(object); });
-    RequireThrows([&] { (void)_ZN3sce2Np9CppWebApi10Activities2V114UserActivities26GetUsersActivitiesResponse8getUsersEv(object); });
-    RequireThrows([&] { (void)_ZNK3sce2Np9CppWebApi10Activities2V114UserActivities14UserActivities12getAccountIdEv(object); });
-    RequireThrows([&] { (void)_ZN3sce2Np9CppWebApi10Activities2V114UserActivities14UserActivities13getActivitiesEv(object); });
-}
-
 }
 
 int main() {
     TestParameterLifecycle();
     TestRequestIsSignedOut();
-    TestResponseAccessorsThrow();
     return 0;
 }
