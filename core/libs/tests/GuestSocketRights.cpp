@@ -275,6 +275,18 @@ static void CheckRefusedControl(const int (&pair)[2]) {
     Require(SendWith(pair[0], "bad", oversized.data(), length) == -1 && *__error_nid_postfix() == 22);
 }
 
+static void CheckRefusedKqueue(const int (&pair)[2]) {
+    const int queue = kqueue_nid_postfix();
+    Require(queue >= 0);
+    std::size_t length = 0;
+    auto control = RightsControl({queue}, length);
+    Require(SendWith(pair[0], "kq", control.data(), length) == -1 && *__error_nid_postfix() == 45);
+    Require(SendWith(pair[0], "next", nullptr, 0) == 4);
+    const auto received = ReceiveWith(pair[1], Space(sizeof(int)));
+    Require(received.bytes == 4 && std::memcmp(received.data.data(), "next", 4) == 0 && received.flags == 0 && received.controlLength == 0);
+    Require(close_nid_postfix(queue) == 0);
+}
+
 int main() {
     int pair[2] = {-1, -1};
     Require(socketpair_nid_postfix(Unix, Stream, 0, pair) == 0);
@@ -287,5 +299,6 @@ int main() {
     CheckFailedInstallation(pair, true);
     CheckPlainPeek(pair);
     CheckRefusedControl(pair);
+    CheckRefusedKqueue(pair);
     Require(close_nid_postfix(pair[0]) == 0 && close_nid_postfix(pair[1]) == 0);
 }

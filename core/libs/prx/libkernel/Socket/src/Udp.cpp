@@ -39,6 +39,7 @@
 #include "prx/libkernel/Socket/include/SocketRuntime.hpp"
 #include "prx/libkernel/File/include/ArchivedFile.hpp"
 #include "prx/libkernel/File/include/DescriptorControl.hpp"
+#include "prx/libkernel/File/include/DirectoryDescriptor.hpp"
 #include "prx/libkernel/Equeue/Equeue.hpp"
 #include "prx/libkernel/File/include/File.hpp"
 #include "prx/libkernel/File/include/RandomDevice.hpp"
@@ -1610,7 +1611,9 @@ int PassedDescriptors(const GuestMsghdr& message, std::vector<int>& descriptors)
             int passed = -1;
             std::memcpy(&passed, control + at + GuestControlHeader + index * sizeof(int), sizeof(passed));
             if (passed < 0 || !DescriptorIsOpen_nid_no_patch(passed)) return 9;
+            if (IsKqueueDescriptor(passed)) return 45;
             File::RefuseArchivedFile(passed, "sendmsg");
+            if (File::IsRandomDevice(passed) || File::IsDirectoryDescriptor(passed)) NotImplemented_nid_no_patch(("sendmsg: passing " + std::string(File::IsRandomDevice(passed) ? "a random device" : "a directory") + " descriptor, whose state is libkernel's, fd=" + std::to_string(passed)).c_str());
             descriptors.push_back(passed);
         }
         const auto space = GuestControlSpace(length - GuestControlHeader);
@@ -1625,6 +1628,7 @@ std::int64_t SendPassing(Socket& socket, const GuestMsghdr& message, std::vector
     if (const int error = PassedDescriptors(message, descriptors)) return Fail(error);
     if ((flags & ~GuestSendFlags) != 0) return Fail(45);
     if (message.name) return Fail(47);
+    if (!descriptors.empty() && data.empty() && socket.type == 1) NotImplemented_nid_no_patch("sendmsg: SCM_RIGHTS without data on a stream socket");
     if (const int waited = WaitForTransfer(socket, true, flags)) return Fail(waited);
     iovec vector{data.data(), data.size()};
     msghdr host{};
