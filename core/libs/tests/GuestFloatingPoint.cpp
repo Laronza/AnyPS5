@@ -38,6 +38,11 @@ void WriteEnvironment(const Environment& state) {
     _mm_setcsr(state.sse);
 }
 
+bool SameEnvironment(const Environment& lhs, const Environment& rhs) {
+    const bool pointers = (lhs.x87[1] & 0x80u) != 0u && (rhs.x87[1] & 0x80u) != 0u;
+    return std::equal(lhs.x87.begin(), lhs.x87.begin() + (pointers ? 7 : 3), rhs.x87.begin()) && lhs.sse == rhs.sse;
+}
+
 bool SameControlState(const Environment& left, const Environment& right) {
     return left.x87[0] == right.x87[0] && left.x87[1] == right.x87[1] && left.sse == right.sse;
 }
