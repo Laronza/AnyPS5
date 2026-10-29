@@ -688,7 +688,6 @@ size_t APS5_VABI wcsftime_nid_postfix(std::uint16_t* str, size_t count, const st
         errno = GuestEinval;
         return 0;
     }
-    if (count == 0) return 0;
     const int callerError = errno;
     const ZoneScope zone;
     tzset_nid_postfix();
