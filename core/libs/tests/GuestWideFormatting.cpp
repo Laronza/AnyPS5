@@ -245,19 +245,74 @@ static void CheckWcsftimeCapacities(const char16_t* format, const std::u16string
         int& error = *__error_nid_postfix();
         error = 5;
         const std::size_t result = wcsftime_nid_postfix(reinterpret_cast<std::uint16_t*>(storage.data() + 1), capacity, reinterpret_cast<const std::uint16_t*>(format), &time);
-        const bool fits = capacity > expected.size();
-        Require(result == (fits ? expected.size() : 0) && error == 5, "wcsftime capacity result and errno");
+        Require(error == 5 && result < (capacity ? capacity : 1), "wcsftime bounded result and errno");
         Require(storage[0] == u'\uffff', "wcsftime leading guard");
-        const std::size_t written = fits ? expected.size() : capacity;
-        for (std::size_t index = 0; index < written; ++index)
-            Require(storage[index + 1] == expected[index], "wcsftime written prefix");
-        if (fits) Require(storage[written + 1] == 0, "wcsftime terminator");
-        for (std::size_t index = written + 1 + (fits ? 1 : 0); index < storage.size(); ++index)
+        if (capacity > expected.size()) {
+            Require(result == expected.size(), "wcsftime complete result");
+            for (std::size_t index = 0; index < expected.size(); ++index)
+                Require(storage[index + 1] == expected[index], "wcsftime complete output");
+            Require(storage[expected.size() + 1] == 0, "wcsftime terminator");
+        }
+        for (std::size_t index = capacity + 1; index < storage.size(); ++index)
             Require(storage[index] == u'\uffff', "wcsftime trailing guard");
     }
 }
 
+static void CheckWcsftimeFirmwarePieces() {
+    GuestTm time{};
+    time.tm_year = 124;
+    time.tm_mon = 1;
+    time.tm_mday = 29;
+    time.tm_wday = 4;
+    time.tm_yday = 59;
+    time.tm_hour = 13;
+    time.tm_min = 5;
+    time.tm_sec = 9;
+    struct Case { const char16_t* format; std::size_t capacity; std::size_t result; std::u16string units; };
+    const Case cases[] = {
+        {u"%Y-%m-%d", 0, 0, u""}, {u"%Y-%m-%d", 1, 0, u"-"},
+        {u"%Y-%m-%d", 2, 0, u"--"}, {u"%Y-%m-%d", 3, 0, u"-02"},
+        {u"%Y-%m-%d", 4, 0, u"2024"}, {u"%Y-%m-%d", 5, 0, u"2024-"},
+        {u"%Y-%m-%d", 6, 0, u"2024--"}, {u"%Y-%m-%d", 7, 0, u"2024-02"},
+        {u"%Y-%m-%d", 8, 0, u"2024-02-"},
+        {u"%Y-%m-%d", 9, 8, std::u16string(u"2024-02-\0", 9)},
+        {u"%Y-%m-%d", 10, 0, u"2024-02-29"},
+        {u"%Y-%m-%d", 11, 10, std::u16string(u"2024-02-29\0", 11)},
+        {u"%F", 9, 0, std::u16string(u"\0" u"024-02-2", 9)},
+        {u"%F|%S|", 5, 4, std::u16string(u"|09|\0", 5)},
+        {u"ab%Ycd", 5, 4, std::u16string(u"abcd\0", 5)},
+        {u"%OYx", 3, 1, std::u16string(u"x\0" u"2", 3)},
+        {u"abc", 2, 0, u"ab"}, {u"", 1, 0, std::u16string(1, 0)},
+        {u"%Q", 1, 0, std::u16string(1, 0)},
+        {u"\U0001f600%Y", 3, 2, std::u16string(u"\U0001f600\0", 3)},
+        {u"%Y\U0001f600", 3, 2, std::u16string(u"\U0001f600\0", 3)}
+    };
+    for (const auto& item : cases) {
+        std::u16string storage(item.capacity + 4, u'\ua5a5');
+        int& error = *__error_nid_postfix();
+        error = 5;
+        const auto result = wcsftime_nid_postfix(reinterpret_cast<std::uint16_t*>(storage.data() + 1), item.capacity,
+            reinterpret_cast<const std::uint16_t*>(item.format), &time);
+        Require(result == item.result && error == 5, "wcsftime firmware piece result and errno");
+        Require(storage[0] == u'\ua5a5', "wcsftime firmware leading guard");
+        for (std::size_t index = 0; index < item.units.size(); ++index)
+            Require(storage[index + 1] == item.units[index], "wcsftime firmware piece units");
+        for (std::size_t index = item.units.size() + 1; index < storage.size(); ++index)
+            Require(storage[index] == u'\ua5a5', "wcsftime firmware untouched units");
+    }
+    time.tm_mon = 8;
+    time.tm_wday = 5;
+    char16_t buffer[12];
+    for (auto& unit : buffer) unit = u'\ua5a5';
+    int& error = *__error_nid_postfix();
+    error = 5;
+    Require(wcsftime_nid_postfix(reinterpret_cast<std::uint16_t*>(buffer), 9,
+        reinterpret_cast<const std::uint16_t*>(u"%A %B"), &time) == 7 && error == 5
+        && std::u16string(buffer, 9) == std::u16string(u"Friday \0e", 9) && buffer[9] == u'\ua5a5', "wcsftime firmware trailing partial conversion");
+}
+
 static void CheckWcsftime() {
+    CheckWcsftimeFirmwarePieces();
     GuestTm time{};
     time.tm_sec = 9;
     time.tm_min = 5;
@@ -315,7 +370,7 @@ static void CheckWcsftime() {
     error = 5;
     Require(wcsftime_nid_postfix(reinterpret_cast<std::uint16_t*>(buffer), 19, reinterpret_cast<const std::uint16_t*>(u"%Y-%m-%d %H:%M:%S"), &time) == 0 && error == 5
         && std::u16string(buffer, 19) == u"2024-02-29 13:05:09" && buffer[19] == u'x', "wcsftime overflow");
-    Require(wcsftime_nid_postfix(reinterpret_cast<std::uint16_t*>(buffer), 1, reinterpret_cast<const std::uint16_t*>(u"%Y"), &time) == 0 && error == 5 && buffer[0] == u'2', "wcsftime one unit");
+    Require(wcsftime_nid_postfix(reinterpret_cast<std::uint16_t*>(buffer), 1, reinterpret_cast<const std::uint16_t*>(u"%Y"), &time) == 0 && error == 5 && buffer[0] == 0, "wcsftime one unit");
     buffer[0] = u'x';
     Require(wcsftime_nid_postfix(reinterpret_cast<std::uint16_t*>(buffer), 0, reinterpret_cast<const std::uint16_t*>(u"%Y"), &time) == 0 && error == 5 && buffer[0] == u'x', "wcsftime zero size");
     Require(wcsftime_nid_postfix(reinterpret_cast<std::uint16_t*>(buffer), 32, reinterpret_cast<const std::uint16_t*>(u""), &time) == 0 && error == 5 && buffer[0] == 0, "wcsftime empty format");

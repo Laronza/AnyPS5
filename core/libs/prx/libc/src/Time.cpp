@@ -269,17 +269,21 @@ void addText(FormatBuffer<TChar>& buffer, const char* text) {
     if constexpr (std::is_same_v<TChar, char>) {
         addPiece(buffer, text, std::strlen(text));
     } else {
-        if (buffer.remaining == 0) {
-            buffer.full = true;
+        if (buffer.remaining == 0) return;
+        unsigned char state[16]{};
+        const char* source = text;
+        const std::size_t required = mbsrtowcs_nid_postfix(nullptr, &source, 0, state);
+        if (required == static_cast<std::size_t>(-1)) {
+            buffer.failed = true;
             return;
         }
-        unsigned char state[16]{};
-        const std::size_t length = mbsrtowcs_nid_postfix(buffer.cursor, &text, buffer.remaining, state);
+        std::memset(state, 0, sizeof(state));
+        source = text;
+        const std::size_t length = mbsrtowcs_nid_postfix(buffer.cursor, &source, buffer.remaining, state);
         if (length == static_cast<std::size_t>(-1)) buffer.failed = true;
-        else {
+        else if (required <= buffer.remaining) {
             buffer.cursor += length;
             buffer.remaining -= length;
-            if (buffer.remaining == 0) buffer.full = true;
         }
     }
 }
@@ -406,6 +410,22 @@ bool addConversion(FormatBuffer<TChar>& buffer, TFormatChar conversion, const Gu
     }
 }
 
+template<typename TFormatChar>
+bool addWideConversion(FormatBuffer<std::uint16_t>& buffer, TFormatChar conversion, const GuestTm& time) {
+    std::string text(64, '\0');
+    for (;;) {
+        FormatBuffer<char> expanded{text.data(), text.size()};
+        if (!addConversion(expanded, conversion, time)) return false;
+        if (!expanded.full && expanded.remaining != 0) {
+            *expanded.cursor = '\0';
+            addText(buffer, text.c_str());
+            return true;
+        }
+        if (text.size() > text.max_size() / 2) throw std::length_error("wcsftime conversion exceeds string capacity");
+        text.resize(text.size() * 2);
+    }
+}
+
 template<typename TChar, typename TFormatChar>
 void formatTime(FormatBuffer<TChar>& buffer, const TFormatChar* format, const GuestTm& time) {
     for (; *format != '\0' && !buffer.full && !buffer.failed; ++format) {
@@ -419,15 +439,18 @@ void formatTime(FormatBuffer<TChar>& buffer, const TFormatChar* format, const Gu
             if (format[1] == '\0') throw std::invalid_argument("strftime: the format ends after an E or O modifier");
             ++format;
         }
-        if (!addConversion(buffer, *format, time)) {
-            if constexpr (std::is_same_v<TChar, char>) {
+        if constexpr (std::is_same_v<TChar, char>) {
+            if (!addConversion(buffer, *format, time)) {
                 const char unknown[] = {'%', *format};
                 addPiece(buffer, unknown, sizeof(unknown));
-            } else {
-                const TChar percent = '%';
-                const TChar unknown = *format;
-                addPiece(buffer, &percent, 1);
-                addPiece(buffer, &unknown, 1);
+            }
+        } else if (!addWideConversion(buffer, *format, time)) {
+            const TChar unknown[] = {'%', *format};
+            const std::size_t length = buffer.remaining < 2 ? buffer.remaining : 2;
+            std::memcpy(buffer.cursor, unknown, length * sizeof(TChar));
+            if (buffer.remaining >= 2) {
+                buffer.cursor += 2;
+                buffer.remaining -= 2;
             }
         }
     }
@@ -665,6 +688,7 @@ size_t APS5_VABI wcsftime_nid_postfix(std::uint16_t* str, size_t count, const st
         errno = GuestEinval;
         return 0;
     }
+    if (count == 0) return 0;
     const int callerError = errno;
     const ZoneScope zone;
     tzset_nid_postfix();
