@@ -312,6 +312,10 @@ static void CheckWcsftimeFirmwarePieces() {
 }
 
 static void CheckWcsftime() {
+    const char* oldZone = getenv_nid_postfix("TZ");
+    const bool hadZone = oldZone != nullptr;
+    const std::string savedZone = hadZone ? oldZone : "";
+    Require(setenv_nid_postfix("TZ", "UTC0", 1) == 0, "wcsftime fixed guest time zone");
     CheckWcsftimeFirmwarePieces();
     GuestTm time{};
     time.tm_sec = 9;
@@ -391,6 +395,7 @@ static void CheckWcsftime() {
         && buffer == std::u16string(u"2024") && buffer[5] == u'x', "wcsftime largest accepted capacity");
     Require(WcsftimeThrows(buffer, nullptr, &time), "wcsftime null format");
     Require(WcsftimeThrows(buffer, u"%Y", nullptr), "wcsftime null time");
+    Require((hadZone ? setenv_nid_postfix("TZ", savedZone.c_str(), 1) : unsetenv_nid_postfix("TZ")) == 0, "wcsftime restore guest time zone");
 }
 
 static void CheckAlternateOctalZero() {
