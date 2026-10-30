@@ -2,7 +2,7 @@
 
 ### Callable exports
 
-- [Callable exports](../../../core/libs/prx/libcurl/Export.cpp) - 85 entries are import-resolution declarations only. Parameter lists, return types and behavior are unverified; parameterless `int` declarations are placeholders, not verified ABI contracts. Every entry throws through `NotImplemented_nid_no_patch`. Unidentified names use literal NID aliases. No runtime functionality is implemented. Data exports require separate layout and ownership analysis. Candidate names match their NIDs in the [public symbol database](https://github.com/zecoxao/sce_symbols/blob/2883963a0a514ba6e77407a08ef4730a65e88254/aerolib.csv) or [supplemental catalog](https://github.com/claimore22/ps5rs/blob/2304be5131221bae0dac24b9767cabffda33f747/data/nids.csv).
+- [Callable exports](../../../core/libs/prx/libcurl/Export.cpp) - 85 callable NIDs match the [public 3.20 catalogue](https://github.com/DNNDHH/PS5-3.20_Libs/blob/b2a77c09cd71c01f34c790cfbe98c751a13262ad/libcurl.c) and the [selected export metadata](https://gist.github.com/kyon-eth/996975adc28d0d270d032fb47eb297a7/52f3b6179ff69fbc0725e02ba146279ecd451f49) from two version-labelled images (SHA-256 `69baa557f91eba487275aa1b8e0aecd8dde1caa261eb2dd04106f8fa00e65361`). The labels are not authenticated. Prototypes and behavior are unverified; these declarations throw through `NotImplemented_nid_no_patch` and implement no runtime functionality.
 
 | Name | NID |
 | --- | --- |
