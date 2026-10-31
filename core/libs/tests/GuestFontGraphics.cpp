@@ -488,7 +488,9 @@ void DrawupFillRecords() {
         f.frame.object = &f.object;
         f.frame.error = 0;
         f.frame.sequence = 0xffffffff;
-        Require(sceFontGraphicsDrawupFillFlatColor(frame, color, &out) == Sealed);
+        RequireError(sceFontGraphicsDrawupFillFlatColor(frame, color, &out), Sealed);
+        Require(f.frame.error == Sealed);
+        f.frame.error = 0;
         f.frame.sequence = 1;
     }
     {
@@ -528,6 +530,11 @@ void DrawupFillRecords() {
         f.frame.error = 0;
         RequireError(sceFontGraphicsDrawupFillLinearGradient(frame, 2, c1, c2, nullptr, 2.0f, 4.0f, 1.0f, 2.0f, 3.0f, 4.0f), InvalidParameter);
         f.frame.error = 0;
+        f.frame.sequence = 0xffffffff;
+        RequireError(sceFontGraphicsDrawupFillLinearGradient(frame, 2, c1, c2, &out, 2.0f, 4.0f, 1.0f, 2.0f, 3.0f, 4.0f), Sealed);
+        Require(f.frame.error == Sealed);
+        f.frame.error = 0;
+        f.frame.sequence = 2;
     }
     {
         DrawupFixture f;

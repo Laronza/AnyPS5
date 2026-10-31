@@ -438,7 +438,7 @@ int DrawupGradientRecord(FontGraphicsFrame* graphicsObject, std::uint32_t mode, 
     if (!frame->object)
         return DrawupRecordError(frame, FONT_GRAPHICS_ERROR_UNINITIALIZED);
     if (frame->sequence == DrawupPoolSealed)
-        return FONT_GRAPHICS_ERROR_SEALED;
+        return DrawupRecordError(frame, FONT_GRAPHICS_ERROR_SEALED);
     int error = 0;
     FontDrawupRecord* const record = DrawupAllocate(frame, 0, &error);
     if (!record) return error;
@@ -472,7 +472,7 @@ int GraphicsDrawupFillFlatColor(FontGraphicsFrame* graphicsObject, const void* c
     if (!frame->object)
         return DrawupRecordError(frame, FONT_GRAPHICS_ERROR_UNINITIALIZED);
     if (frame->sequence == DrawupPoolSealed)
-        return FONT_GRAPHICS_ERROR_SEALED;
+        return DrawupRecordError(frame, FONT_GRAPHICS_ERROR_SEALED);
     int error = 0;
     FontDrawupRecord* const record = DrawupAllocate(frame, 0, &error);
     if (!record) return error;
