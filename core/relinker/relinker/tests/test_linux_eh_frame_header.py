@@ -89,13 +89,16 @@ def header_bounds(relinker, directory):
 
 def duplicate_headers(relinker, directory):
     image = fixture(5)
+    struct.pack_into("<Q", image, 24, 0x100)
+    image[0x4100:0x4106] = image[0x4000:0x4006]
     struct.pack_into("<IIQQQQQQ", image, 64 + 3 * 56, *EH_FRAME_HEADER)
     source = Path(directory) / "duplicate.elf"
     source.write_bytes(image)
     module = guest_fixture(PLAIN_SITE)
     struct.pack_into("<H", module, 56, 5)
     for index in (3, 4):
-        struct.pack_into("<IIQQQQQQ", module, 64 + index * 56, PT_GNU_EH_FRAME, 4, 0x500, 0x1100, 0x1100, 8, 8, 4)
+        struct.pack_into("<IIQQQQQQ", module, 64 + index * 56, PT_GNU_EH_FRAME, 4, 0x980, 0x2380, 0x2380, 16, 16, 4)
+    struct.pack_into("<BBBBQI", module, 0x980, 1, 0, 3, 0, 0x2390, 0)
     for mode in ([], ["--windows"], ["--macos"]):
         name = "duplicate-" + ("-".join(flag.lstrip("-") for flag in mode) or "linux")
         output = Path(directory) / (name + ".out")
@@ -111,6 +114,7 @@ def duplicate_headers(relinker, directory):
                                 capture_output=True, text=True, timeout=30)
         assert result.returncode == 2 and "consumer.prx: Duplicate EH frame segment" in result.stderr, ("guest-" + name, result.returncode, result.stdout, result.stderr)
         assert not (case / "output").exists(), ("guest-" + name, "output written for a module with two PT_GNU_EH_FRAME segments")
+        assert not (case / "app0" / "prx" / "consumer.prx.guest.prx").exists(), ("guest-" + name, "module written with two PT_GNU_EH_FRAME segments")
 
 
 def main():
