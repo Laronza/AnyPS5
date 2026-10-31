@@ -71,13 +71,18 @@ def main():
                 result, artifact, output = convert(f"{sce}-{name}", "linux", image)
                 assert result.returncode == 2 and "Invalid guest TLS relocation" in result.stderr, (sce, name, result.stderr)
                 assert not artifact.exists() and not output.exists(), name
-            for symbol in (3, 0):
+            for symbol, info, section in ((3, 3, 0), (0, 3, 0), (3, 6, 1)):
                 for kind, addend in ((DTPMOD64, 0), (DTPOFF64, 4), (TPOFF64, 4)):
-                    if symbol == 3 and kind == TPOFF64:
+                    if info == 3 and symbol == 3 and kind == TPOFF64:
                         continue
-                    image = fixture(sce, kind=kind, addend=addend, symbol=symbol, tls_memory=0)
+                    if info == 6:
+                        image = fixture(sce, info=info, section=section, kind=kind, addend=addend)
+                        for system in ("linux", "windows", "macos"):
+                            result, artifact, output = convert(f"{sce}-defined-{kind}", system, image)
+                            assert result.returncode == 0, (sce, kind, system, result.stdout, result.stderr)
+                    image = fixture(sce, info=info, section=section, kind=kind, addend=addend, symbol=symbol, tls_memory=0)
                     for system in ("linux", "windows", "macos"):
-                        name = f"{sce}-{symbol}-{kind}-empty-tls"
+                        name = f"{sce}-{symbol}-{info}-{kind}-empty-tls"
                         result, artifact, output = convert(name, system, image)
                         assert result.returncode == 2 and "Invalid guest TLS relocation" in result.stderr, (name, system, result.stdout, result.stderr)
                         assert not artifact.exists() and not output.exists(), (name, system)
