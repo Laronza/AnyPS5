@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <numbers>
+#include <stdexcept>
 #include <vector>
 
 static void Require(bool value) { if (!value) std::abort(); }
@@ -238,8 +239,8 @@ struct M4aacExtendedParam {
     std::uint32_t surroundChannelInterleaveOrder;
 };
 
-void TestAac(bool adts, std::uint32_t maxChannels = 2, std::uint32_t paramSize = sizeof(AudiodecParamM4aac), std::uint32_t enableNondelayOutput = 0) {
-    M4aacExtendedParam param{{paramSize, 1, adts ? 1u : 2u, 3, maxChannels, 0}, enableNondelayOutput, 0};
+void TestAac(bool adts, std::uint32_t maxChannels = 2, std::uint32_t paramSize = sizeof(AudiodecParamM4aac), std::uint32_t enableNondelayOutput = 0, std::uint32_t surroundChannelInterleaveOrder = 0) {
+    M4aacExtendedParam param{{paramSize, 1, adts ? 1u : 2u, 3, maxChannels, 0}, enableNondelayOutput, surroundChannelInterleaveOrder};
     AudiodecM4aacInfo info{sizeof(info), 0, 0, 0, 0};
     AudiodecCtrl ctrl{&param, &info, nullptr, nullptr};
     const std::int32_t handle = sceAudiodecCreateDecoder(&ctrl, 3);
@@ -277,6 +278,20 @@ void TestAacRaw51(std::uint32_t maxChannels) {
     Require(streams.pcm.ui_pcm_size == 1024 * 6 * 2);
     Require(info.ui_sampling_freq == 48000 && info.ui_number_of_channels == 6 && info.i_result == 0);
     Require(sceAudiodecClearContext(handle) == 0);
+    Require(sceAudiodecDeleteDecoder(handle) == 0);
+}
+
+void TestAacRaw51InterleaveOrder(std::uint32_t surroundChannelInterleaveOrder) {
+    M4aacExtendedParam param{{32, 1, 2, 3, 8, 0}, 0, surroundChannelInterleaveOrder};
+    AudiodecM4aacInfo info{sizeof(info), 0, 0, 0, 0};
+    AudiodecCtrl ctrl{&param, &info, nullptr, nullptr};
+    const std::int32_t handle = sceAudiodecCreateDecoder(&ctrl, 3);
+    Require(handle > 0 && info.ui_number_of_channels == 8);
+    Streams streams;
+    bool threw = false;
+    try { Decode(handle, ctrl, streams, AAC_RAW_51, sizeof(AAC_RAW_51)); }
+    catch (const std::runtime_error&) { threw = true; }
+    Require(threw);
     Require(sceAudiodecDeleteDecoder(handle) == 0);
 }
 
@@ -472,8 +487,12 @@ int main() {
     TestAac(true, 2, 28, 1);
     TestAac(false, 2, 32, 1);
     TestAac(false, 8, 28, 1);
+    TestAac(false, 8, 32, 0, 2);
+    TestAac(true, 2, 32, 1, 1);
     TestAacRaw51(6);
     TestAacRaw51(8);
+    TestAacRaw51InterleaveOrder(1);
+    TestAacRaw51InterleaveOrder(2);
     for (const bool adts : {true, false}) {
         for (const bool highEfficiency : {true, false}) {
             TestHeAac(HEAAC_V2_MONO, sizeof(HEAAC_V2_MONO), 1, adts, highEfficiency);
