@@ -303,6 +303,7 @@ std::set<Domain::VirtualAddress> CodeInstructionCollector::Collect(const std::ve
     }
     CodePointers pointers;
     std::set<std::uint64_t> importSlots;
+    std::set<std::uint64_t> relativeSlots;
     const auto relocationRange = [&](std::uint64_t addressTag, std::uint64_t sceAddressTag, std::uint64_t sizeTag, std::uint64_t sceSizeTag) -> std::pair<std::uint64_t, std::uint64_t> {
         const auto size = value(sizeTag, sceSizeTag);
         if (!size) return {0, 0};
@@ -331,7 +332,10 @@ std::set<Domain::VirtualAddress> CodeInstructionCollector::Collect(const std::ve
                     && addend <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())
                     && Io::ReadU64(bytes, symbol + 8) == addend;
                 const auto [recorded, inserted] = pointers.Values.emplace(slot, addend);
-                if ((index != 0 && !zeroSectionSymbol && !matchingDefinedSymbol) || (!inserted && recorded->second != addend)) throw Domain::RelinkerException("Code analysis: invalid relative relocation", slot);
+                const auto replaces = !plt && index == 0 && !inserted && relativeSlots.contains(slot);
+                if ((index != 0 && !zeroSectionSymbol && !matchingDefinedSymbol) || (!inserted && recorded->second != addend && !replaces)) throw Domain::RelinkerException("Code analysis: invalid relative relocation", slot);
+                if (replaces) recorded->second = addend;
+                if (!plt && index == 0) relativeSlots.insert(slot);
                 addPointerRoot(addend);
             } else if (type == 1 || type == 6 || type == 7) {
                 if (index != 0 && index >= symbolCount) throw Domain::RelinkerException("Code analysis: invalid relocation symbol", slot);
