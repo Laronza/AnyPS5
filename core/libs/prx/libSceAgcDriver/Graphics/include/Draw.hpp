@@ -87,6 +87,7 @@ struct MeshGrid {
     std::uint32_t groups;
     std::uint32_t instances;
     std::uint32_t layers;
+    std::uint32_t layerStride;
 };
 std::optional<MeshGrid> MeshGridFor(const Context& context, std::uint32_t groups, std::uint32_t instances);
 MeshArguments ResolveMeshArguments(const Pm4::DrawArguments& record, const MeshArgumentRules& rules);
