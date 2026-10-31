@@ -416,7 +416,7 @@ def main(argv=None):
             print(f"no changed translation unit against {args.base}")
             return 0
         checked, failed = check(root, args.build, files, args.jobs)
-    except (json.JSONDecodeError, OSError, ValueError) as error:
+    except (json.JSONDecodeError, OSError, ValueError, RecursionError) as error:
         parser.error(str(error))
     if failed:
         print(f"{failed} of {checked} translation units did not compile", file=sys.stderr)
