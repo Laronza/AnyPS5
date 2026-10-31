@@ -695,6 +695,28 @@ void testLargeDataFill() {
     GuestHeap::GuestHeapFree_nid_postfix(produced);
 }
 
+void testLabelResetByItsQueueBeforeItLanded() {
+    alignas(64) static volatile std::uint32_t gate = 0, second = 0;
+    constexpr std::uint32_t fillBytes = 4u << 20u, blockBytes = fillBytes + (1u << 20u);
+    auto* block = static_cast<std::uint32_t*>(GuestHeap::GuestHeapAlignForGpu_nid_postfix(65536, blockBytes));
+    auto* label = static_cast<volatile std::uint32_t*>(block + (fillBytes + 65536) / 4);
+    submit(0x20, commands(dataFill(block, 0, blockBytes)));
+    AgcDriverWaitIdle_nid_postfix();
+    const auto gpuLabelsBefore = AgcDriver::DriverDetail::gpuLabels.load();
+    submit(0x20, commands(waitEqual(&gate, 1), waitEqual(label, 1), dataFill(block, 0x5a5a5a5au, fillBytes), writeData(label, 0), waitEqual(label, 1), writeData(&second, 1)));
+    submit(0, commands(writeData(label, 1)));
+    waitFor(label, 1, "producer label never landed");
+    gate = 1;
+    waitFor(label, 0, "the consumer's reset of the label never landed");
+    check(AgcDriver::DriverDetail::gpuLabels.load() > gpuLabelsBefore, "the consumer's reset of the label was not stored on the GPU behind the fill");
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    check(second == 0, "a wait passed on a label value its own queue had already reset, before the reset reached memory, or the wait expired");
+    submit(0, commands(writeData(label, 1)));
+    waitFor(&second, 1, "the consumer did not resume after a new producer label");
+    AgcDriverWaitIdle_nid_postfix();
+    GuestHeap::GuestHeapFree_nid_postfix(block);
+}
+
 void testCopyIntoHostMemory() {
     constexpr std::size_t words = 32768;
     constexpr auto bytes = static_cast<std::uint32_t>(words * 4);
@@ -1180,6 +1202,7 @@ int main(int argc, char** argv) {
         testHeaderWithoutProgramAddress();
         testCopyIntoHostMemory();
         testLargeDataFill();
+        testLabelResetByItsQueueBeforeItLanded();
         testSmallCopyBehindPendingSource();
         testRegisteredFloatMode();
         testDispatchFloatMode();

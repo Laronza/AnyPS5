@@ -1692,6 +1692,36 @@ void lateLabelTests(Recorder& recorder) {
     Require(!Recorder::LookupLabel(a, 4, 5).has_value() && !Recorder::LookupLabel(b, 8, 5).has_value() && !recorder.PendingLabelIn(0x70000, 0x400), "(7) entries outlived their batch");
 }
 
+void unlandedOwnLabelTests(Recorder& recorder) {
+    const std::array<std::byte, 4> zero{};
+    const std::array<std::byte, 4> one{std::byte{1}, std::byte{0}, std::byte{0}, std::byte{0}};
+    const std::array<std::byte, 8> pair{std::byte{1}, std::byte{0}, std::byte{0}, std::byte{0}, std::byte{2}, std::byte{0}, std::byte{0}, std::byte{0}};
+    const auto tag = AgcDriver::GuestMemory::GpuLockThreadTag();
+    constexpr std::uint64_t reset = 0x73000, wide = 0x73100, queued = 0x73200, covered = 0x73300;
+    constexpr std::uint32_t consumer = 0x28, producer = 0;
+    Require(!Recorder::UnlandedOwnLabel(reset, 4, consumer).has_value(), "an empty table reports an unlanded store");
+    recorder.NoteLabel(reset, zero, 80, consumer);
+    const auto own = Recorder::UnlandedOwnLabel(reset, 4, consumer);
+    Require(own.has_value() && *own == 0, "a queue's recorded reset is not its unlanded store");
+    Require(!Recorder::UnlandedOwnLabel(reset, 4, producer).has_value(), "another queue's recorded store is reported as the caller's own");
+    recorder.NoteLabel(reset, one, 81, producer);
+    Require(!Recorder::UnlandedOwnLabel(reset, 4, consumer).has_value(), "a reset another queue's newer store replaced is still reported");
+    Require(Recorder::UnlandedOwnLabel(reset, 4, producer) == std::optional<std::uint64_t>(1), "the newest store is not reported to its queue");
+    recorder.NoteLabel(wide, pair, 90, consumer);
+    Require(Recorder::UnlandedOwnLabel(wide, 8, consumer) == std::optional<std::uint64_t>(0x200000001ull), "an 8-byte own store is not composed");
+    recorder.NoteLabel(wide + 4, one, 91, producer);
+    Require(!Recorder::UnlandedOwnLabel(wide, 8, consumer).has_value() && Recorder::UnlandedOwnLabel(wide, 4, consumer).has_value(), "a wide value with another queue's newer high dword is reported as own");
+    recorder.NoteLabel(covered, zero, 92, consumer);
+    recorder.NotePendingWrite(covered, 16);
+    Require(!Recorder::UnlandedOwnLabel(covered, 4, consumer).has_value(), "an overwritten own store is reported");
+    Recorder::NoteQueuedLabel(queued, one, 95, tag);
+    Require(Recorder::UnlandedOwnLabel(queued, 4, tag) == std::optional<std::uint64_t>(1), "a queued own store is not reported");
+    Recorder::ForgetQueuedLabels();
+    Require(!Recorder::UnlandedOwnLabel(queued, 4, tag).has_value(), "a forgotten queued store is still reported");
+    recorder.Sync();
+    Require(!Recorder::UnlandedOwnLabel(reset, 4, producer).has_value() && !Recorder::UnlandedOwnLabel(wide, 4, consumer).has_value(), "a store outlived its batch as unlanded");
+}
+
 void largeLabelTests(Recorder& recorder) {
     constexpr std::uint64_t slot = 0x71000, small = slot + 0x10, outside = slot - 4, wide = 0x72000;
     const std::array<std::byte, 4> one{std::byte{1}, std::byte{0}, std::byte{0}, std::byte{0}};
@@ -12482,6 +12512,7 @@ int main(int argc, char** argv) {
             labelTests(recorder);
             lateLabelTests(recorder);
             largeLabelTests(recorder);
+            unlandedOwnLabelTests(recorder);
             std::cout << "Completion label storage and ordering tests passed\n";
             return 0;
         }
@@ -12705,6 +12736,7 @@ int main(int argc, char** argv) {
         labelTests(recorder);
         lateLabelTests(recorder);
         largeLabelTests(recorder);
+        unlandedOwnLabelTests(recorder);
         unchangedSinceTests();
         closeRaceTests(device, recorder);
         keyProofTests(device, recorder);
