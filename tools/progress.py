@@ -342,12 +342,26 @@ def treemap(title, data, left):
     return parts
 
 
-def render(libraries, shaders):
+def shader_forms_panel(source):
+    groups = []
+    for form in source["forms"]:
+        if form["form"] not in ("base", "vop3"):
+            continue
+        name = form["encoding"] if form["form"] == "base" else f'{form["encoding"]} in VOP3'
+        groups.append({"name": name, "label": name, "done": form["decoded"], "todo": form["total"] - form["decoded"]})
+    instructions = source["instructions"]
+    return {"groups": groups, "done": instructions["decoded"], "total": instructions["total"], "percent": shader_source_percent(source)}
+
+
+def render(libraries, shaders, shader_source=None):
     width, height = 2 * PANEL_WIDTH + GAP, HEADER + MAP_HEIGHT
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">',
              rect(0, 0, width, height, BORDER, 0)]
     parts += treemap("System libraries*", libraries, 0)
-    parts += treemap("GPU shader instructions", shaders, PANEL_WIDTH + GAP)
+    if shader_source:
+        parts += treemap("Shader forms decoded", shader_forms_panel(shader_source), PANEL_WIDTH + GAP)
+    else:
+        parts += treemap("GPU shader instructions", shaders, PANEL_WIDTH + GAP)
     parts.append("</svg>")
     return "\n".join(parts)
 
@@ -407,6 +421,11 @@ def shader_source_section(source):
         f'<tr><td>DPP forms decoded</td><td>{dpp["decoded"]}</td><td>{dpp["total"]}</td></tr>',
         f'<tr><td>Unsupported-throw sites in the recompiler</td><td>{source["unsupported_throws"]}</td><td></td></tr>',
         "</table>",
+        "<table>",
+        "<tr><th>Encoding</th><th>Form</th><th>Decoded</th><th>Translated</th><th>Total</th></tr>",
+        *[f'<tr><td>{escape(f["encoding"])}</td><td>{escape(f["form"])}</td><td>{f["decoded"]}</td><td>{f["translated"]}</td><td>{f["total"]}</td></tr>'
+          for f in source["forms"]],
+        "</table>",
         "<p>This is source coverage, not game compatibility. A form counts as decoded when the decoder's opcode tables map it "
         "to an opcode (VOP3 and DPP rules included); it counts as translated when the translator has a case for that opcode, "
         "which does not show the translation is correct. Forms are the base, VOP3 and DPP encodings of the AMD RDNA 2 "
@@ -415,6 +434,15 @@ def shader_source_section(source):
         "whose message or exception type says unsupported or not implemented. "
         f'<a href="{SOURCE}/tools/shader_scan.py">How it is measured</a>.</p>',
     ])
+
+
+def shader_page(shader_source, shaders, extra):
+    if shader_source:
+        return [shader_source_section(shader_source)]
+    return [table("GPU shader instructions", "Encoding", shaders),
+            f'<p>The total is the AMD RDNA 1 + RDNA 2 instruction list (<a href="{SOURCE}/tools/rdna_isa.txt">tools/rdna_isa.txt</a>). '
+            f'An instruction is implemented when the <a href="{SOURCE}/core/shader/recompiler/RdnaDecoder">decoder</a> recognizes it. '
+            f"Decoded opcodes not present in AMD's public list are not counted: {extra}.</p>"]
 
 
 def summary(libraries, shaders, shader_source=None):
@@ -437,11 +465,7 @@ def summary(libraries, shaders, shader_source=None):
         "not every function exported by the PS5 firmware. Shared-source libraries are counted only at their source library. "
         "Libraries with no exports only provide an empty module for titles that load them. "
         f'<a href="{SOURCE}/docs/dev/PROGRESS.md">Counting rules</a>.</p>',
-        shader_source_section(shader_source),
-        table("GPU shader instructions", "Encoding", shaders),
-        f'<p>The total is the AMD RDNA 1 + RDNA 2 instruction list (<a href="{SOURCE}/tools/rdna_isa.txt">tools/rdna_isa.txt</a>). '
-        f'An instruction is implemented when the <a href="{SOURCE}/core/shader/recompiler/RdnaDecoder">decoder</a> recognizes it. '
-        f"Decoded opcodes not present in AMD's public list are not counted: {extra}.</p>",
+        *shader_page(shader_source, shaders, extra),
         '<p><a href="history.html">Progress history</a> (one point per day).</p>',
         "</body></html>",
     ]) + "\n"
@@ -583,7 +607,7 @@ def write_site(output, libraries, shaders, shader_source=None):
     (output / "progress.json").write_text(json.dumps(site_data(libraries, shaders, shader_source), indent=2), encoding="utf-8")
     (output / "badge-libraries.svg").write_text(badge("libraries*", libraries), encoding="utf-8")
     (output / "badge-shaders.svg").write_text(shader_source_badge(shader_source) if shader_source else badge("shaders", shaders), encoding="utf-8")
-    (output / "progress.svg").write_text(render(libraries, shaders), encoding="utf-8")
+    (output / "progress.svg").write_text(render(libraries, shaders, shader_source), encoding="utf-8")
     (output / "progress.html").write_text(summary(libraries, shaders, shader_source), encoding="utf-8")
 
 

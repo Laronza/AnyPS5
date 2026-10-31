@@ -18,7 +18,7 @@ A library with no scanned definitions and no shared sources, such as one whose `
 
 ## Shader source coverage
 
-The shaders badge and the "Shader recompiler source coverage" section of the progress page come from [`tools/shader_scan.py`](../../tools/shader_scan.py). They measure the shader recompiler's source, not any game: source coverage, not game compatibility. The older "GPU shader instructions" table counts instruction names that have an `RdnaOpcode` enumerator, which reached 100%, so it no longer drives the badge.
+The shaders badge and the "Shader recompiler source coverage" section of the progress page come from [`tools/shader_scan.py`](../../tools/shader_scan.py). They measure the shader recompiler's source, not any game: source coverage, not game compatibility. The older "GPU shader instructions" figure counted instruction names that have an `RdnaOpcode` enumerator and reached 100%; the badge, the progress map panel ("Shader forms decoded") and the page now show the forms instead. That figure stays in `progress.json` under `shaders` for comparisons and history, and is shown only when the shader source scan cannot run (a local run without `--require-shader-source`).
 
 The scan takes every encoded form of every instruction in AMD's RDNA 2 instruction set from [`tools/rdna2_isa_forms.txt`](../../tools/rdna2_isa_forms.txt). A form is the base encoding, the VOP3 encoding of a VOP1, VOP2 or VOPC instruction, or a DPP16 or DPP8 word on a VOP1 or VOP2 instruction. SDWA forms are not counted, because whether the decoder accepts one depends on selector bits that a source scan cannot tell apart.
 

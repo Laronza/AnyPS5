@@ -21,7 +21,8 @@ progress = load("anyps5_progress_for_shader_scan", "progress.py")
 
 DECODER = "core/shader/recompiler/RdnaDecoder/src/"
 KEYS = {"VOP3:VOP1": "Vop3EncodedVop1", "MIMG": "Image", "VOP3P": "Vop3p"}
-ENTRIES = {"SOP1": {3: "SMovB32"}, "VOP2": {3: "VAddF32", 5: "VMacF32"}}
+ENTRIES = {"SOP1": {3: "SMovB32"}, "VOP2": {3: "VAddF32", 5: "VMacF32"}, "VOP1": {5: "VCvtF32I32"},
+           "VOP3:VOP1": {0: "VMovB32", 2: "VCvtF32I32"}, "VOPC": {0xC0: "VCmpEqF32", 0x100: "VCmpNew"}}
 
 ISA_XML = """<Spec><ISA><Instructions>
 <Instruction><InstructionName>S_MOV_B32</InstructionName><InstructionEncodings>
@@ -47,6 +48,13 @@ ISA = [
     ("V_MAC_F32", "VOP2", "vop3", 0x105),
     ("V_ADD_F32", "VOP2", "dpp16", 3),
     ("V_ADD_F32", "VOP2", "dpp8", 3),
+    ("V_CVT_F32_I32", "VOP1", "base", 5),
+    ("V_CVT_F32_I32", "VOP1", "vop3", 0x182),
+    ("V_CVT_F32_I32", "VOP1", "dpp16", 5),
+    ("V_MOV_B32", "VOP1", "vop3", 0x180),
+    ("V_CMP_EQ_F32", "VOPC", "vop3", 0xC0),
+    ("V_CMP_NEW", "VOPC", "vop3", 0x100),
+    ("EXP", "EXP", "base", 0),
 ]
 
 
@@ -64,12 +72,15 @@ def write_tree(root, tables=None, throws=True):
         f"{DECODER}Rules.cpp": (
             "bool isUnsupportedVop3EncodedVop2Alias(uint32_t op) { return op == 0x05; }\n"
             "bool isVop2LiteralMadOpcode(uint32_t op) { return op == 0x06; }\n"
-            "bool hasDppForm(RdnaOpcode op) { switch (op) { case RdnaOpcode::NoDppOpcode: return false; default: return true; } }\n"
+            "void dispatch(RdnaInstructionFamily f) { switch (f) { case RdnaInstructionFamily::EXP: return; default: return; } }\n"
+            "bool hasDppForm(RdnaOpcode op) { switch (op) { case RdnaOpcode::VCvtF32I32: return false; default: return true; } }\n"
             "bool acceptsDpp8(RdnaOpcode op) { switch (op) { case RdnaOpcode::VAddF32: return false; default: return true; } }\n"),
         "core/shader/recompiler/Translation/Translate.cpp": "".join(
             f"void TranslationContext::{emit}(const Instruction& i)\n{{\n    switch (i.op)\n    {{\n{cases}    }}\n}}\n"
-            for emit, cases in (("emitScalar", "        case RdnaOpcode::SMovB32: break;\n"), ("emitVector", ""),
-                                ("emitMemory", ""), ("emitInterpolation", ""))),
+            for emit, cases in (("emitScalar", "        case RdnaOpcode::SMovB32: break;\n"),
+                                ("emitVector", "        case RdnaOpcode::VCmpEqF32: break;\n"), ("emitMemory", ""),
+                                ("emitInterpolation", "        case RdnaOpcode::VCvtF32I32: break;\n")))
+        + "void TranslateInstruction(const Instruction& i)\n{\n    switch (i.family)\n    {\n        case RdnaInstructionFamily::EXP: break;\n    }\n}\n",
     }
     if throws:
         files["core/shader/recompiler/Ir/Lower.cpp"] = (
@@ -129,12 +140,14 @@ class ScanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             write_tree(directory)
             result = shader_scan.measure(directory, ISA)
-        self.assertEqual(result["instructions"], {"total": 5, "decoded": 3, "translated": 1})
-        self.assertEqual(result["dpp"], {"total": 2, "decoded": 1})
-        self.assertEqual(result["untranslated"], ["V_ADD_F32"])
+        self.assertEqual(result["instructions"], {"total": 11, "decoded": 8, "translated": 5})
+        self.assertEqual(result["dpp"], {"total": 3, "decoded": 1})
+        self.assertEqual(result["untranslated"], ["V_ADD_F32", "V_MOV_B32"])
         by_form = {(f["encoding"], f["form"]): (f["total"], f["decoded"], f["translated"]) for f in result["forms"]}
         self.assertEqual(by_form, {("SOP1", "base"): (2, 1, 1), ("VOP2", "base"): (1, 1, 0), ("VOP2", "vop3"): (2, 1, 0),
-                                   ("VOP2", "dpp16"): (1, 1, 0), ("VOP2", "dpp8"): (1, 0, 0)})
+                                   ("VOP2", "dpp16"): (1, 1, 0), ("VOP2", "dpp8"): (1, 0, 0),
+                                   ("VOP1", "base"): (1, 1, 1), ("VOP1", "vop3"): (2, 2, 1), ("VOP1", "dpp16"): (1, 0, 0),
+                                   ("VOPC", "vop3"): (2, 1, 1), ("EXP", "base"): (1, 1, 1)})
 
     def test_unsupported_throws_skip_comments_rethrows_other_messages_and_tests(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -167,7 +180,10 @@ class ScanTests(unittest.TestCase):
 
 class ReportTests(unittest.TestCase):
     SOURCE = {"isa": "AMD RDNA 2", "instructions": {"total": 5, "decoded": 3, "translated": 1},
-              "dpp": {"total": 2, "decoded": 1}, "unsupported_throws": 3, "forms": [], "untranslated": ["V_ADD_F32"]}
+              "dpp": {"total": 2, "decoded": 1}, "unsupported_throws": 3, "untranslated": ["V_ADD_F32"],
+              "forms": [{"encoding": "SOP1", "form": "base", "total": 2, "decoded": 1, "translated": 1},
+                        {"encoding": "VOP2", "form": "vop3", "total": 3, "decoded": 2, "translated": 0},
+                        {"encoding": "VOP2", "form": "dpp16", "total": 2, "decoded": 1, "translated": 0}]}
     GROUP = {"percent": 100.0, "groups": [], "done": 0, "total": 0, "extra": []}
 
     def test_badge_shows_decoded_over_total_and_says_what_it_measures(self):
@@ -189,6 +205,18 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("untranslated", data["shader_source"])
         self.assertIn("source coverage, not game compatibility", html)
         self.assertIn("3/5", badge)
+        self.assertNotIn("1166", html)
+        self.assertNotIn("GPU shader instructions", html)
+        self.assertIn("<td>VOP2</td><td>dpp16</td><td>1</td><td>0</td><td>2</td></tr>", html)
+
+    def test_progress_map_panel_shows_the_forms_not_the_old_instruction_names(self):
+        svg = progress.render(dict(self.GROUP), dict(self.GROUP), self.SOURCE)
+        self.assertIn("Shader forms decoded: 60.0% (3/5)", svg)
+        self.assertIn("SOP1: 1/2", svg)
+        self.assertIn("VOP2 in VOP3: 2/3", svg)
+        self.assertNotIn("dpp16", svg)
+        self.assertNotIn("GPU shader instructions", svg)
+        self.assertIn("GPU shader instructions", progress.render(dict(self.GROUP), dict(self.GROUP)))
 
     def test_without_source_numbers_the_old_files_are_written(self):
         with tempfile.TemporaryDirectory() as directory:
