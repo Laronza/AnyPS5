@@ -60,6 +60,7 @@ private:
     std::filesystem::path path;
     bool holdsFile = false;
     std::size_t loadedBytes = 0;
+    std::size_t settledBytes = 0;
     std::optional<FileHeader> settledFile;
     std::mutex mutex;
     std::condition_variable wake;

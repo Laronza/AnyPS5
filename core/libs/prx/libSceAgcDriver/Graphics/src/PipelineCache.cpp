@@ -71,6 +71,7 @@ PipelineCache::PipelineCache(const Context& context, const VkPhysicalDevicePrope
         info.initialDataSize = 0;
         info.pInitialData = nullptr;
         loadedBytes = 0;
+        settledBytes = 0;
         settledFile.reset();
         result = create(context.device, &info, nullptr, &cache);
     }
@@ -223,6 +224,7 @@ void PipelineCache::load(std::vector<std::byte>& initialData) {
     initialData = std::move(file.contents);
     initialData.erase(initialData.begin(), initialData.begin() + sizeof(FileHeader));
     loadedBytes = initialData.size();
+    settledBytes = imported ? 0 : initialData.size();
     settledFile = imported ? std::nullopt : std::optional(file.header);
     holdsFile = !imported;
     std::fprintf(stderr, "[pipeline-cache] loaded %.1f KiB from %s\n", static_cast<double>(initialData.size()) / 1024.0, path.string().c_str());
@@ -240,9 +242,11 @@ void PipelineCache::save(bool final, bool waitForPipelines) try {
         if (getData(context.device, cache, &liveBytes, nullptr) != VK_SUCCESS || liveBytes == 0) return;
     }
     const auto onDisk = readHeader();
+    if (!final && !waitForPipelines && liveBytes == settledBytes && onDisk == settledFile) return;
     const bool fileUnchanged = holdsFile && settledFile.has_value() && onDisk == settledFile;
     const auto started = std::chrono::steady_clock::now();
     const auto settle = [&](const std::optional<FileHeader>& file, bool includesFile = false) {
+        settledBytes = liveBytes;
         settledFile = file;
         holdsFile = includesFile;
     };
