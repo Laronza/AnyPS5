@@ -511,6 +511,13 @@ class CheckCompileDatabaseTests(CheckCompileFixture):
         self.assertNotIn("Traceback", result.stderr)
         self.assertNotIn("expected an array of command objects", result.stderr)
 
+    def test_a_recursion_error_outside_the_database_parser_is_not_a_usage_error(self):
+        source = self.source("unit.cpp")
+        with patch.object(check_compile, "repository", return_value=self.root):
+            with patch.object(check_compile, "check", side_effect=RecursionError("unrelated")):
+                with self.assertRaises(RecursionError):
+                    check_compile.main(["--build", str(self.build), str(source)])
+
     def test_non_object_entries_are_rejected_before_any_compiler_runs(self):
         self.check_invalid_entries(lambda valid: [(value, "expected a command object")
                                                   for value in (None, [], 42, "command")])
