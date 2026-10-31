@@ -14,11 +14,11 @@ public:
     void CreateComputePipeline(const VkComputePipelineCreateInfo& info, std::span<const std::uint32_t> spirv, std::span<const std::uint32_t> layout, VkPipeline* pipeline) const;
 
 private:
-    enum class RestoreResult { Missing, Restored, BelowThreshold };
+    enum class RestoreResult { Missing, Restored, BelowThreshold, CaptureFailed };
     RestoreResult restore(const VkComputePipelineCreateInfo& info, std::span<const std::byte> key, VkPipeline* pipeline) const;
     RestoreResult restoreFile(const VkComputePipelineCreateInfo& info, std::span<const std::byte> key, VkPipeline* pipeline, const std::filesystem::path& path) const;
-    void capture(VkPipeline pipeline, std::span<const std::byte> key) const;
-    void rememberThreshold(std::span<const std::byte> key) const;
+    bool capture(VkPipeline pipeline, std::span<const std::byte> key) const;
+    void rememberThreshold(std::span<const std::byte> key, bool captureFailed = false) const;
     std::filesystem::path filePath(std::span<const std::byte> key) const;
 
     Context context;

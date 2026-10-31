@@ -1,4 +1,5 @@
 #include "prx/libSceAgcDriver/Graphics/include/PipelineBinaryStore.hpp"
+#include "ShaderCacheDirectory.hpp"
 #include <array>
 #include <cstdlib>
 #include <cstring>
@@ -6,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <random>
+#include <thread>
 
 using namespace AgcDriver::Graphics;
 
@@ -15,10 +17,12 @@ unsigned cold = 0;
 unsigned restored = 0;
 unsigned released = 0;
 unsigned legacyCreates = 0;
+unsigned captures = 0;
 bool reject = false;
 bool captureFailure = false;
 bool missing = false;
 bool unsupported = false;
+bool oversized = false;
 std::uint8_t pipelineKey = 7;
 std::uint8_t global = 1;
 std::uintptr_t next = 1;
@@ -56,12 +60,13 @@ VKAPI_ATTR VkResult VKAPI_CALL Create(VkDevice, VkPipelineCache cache, std::uint
         ++legacyCreates;
     }
     if (restore && reject) return VK_ERROR_UNKNOWN;
-    if (capture && captureFailure) return VK_ERROR_UNKNOWN;
+    if (capture) ++captures;
     if (capture && duringCapture) {
         auto callback = std::move(duringCapture);
         duringCapture = {};
         callback();
     }
+    if (capture && captureFailure) return VK_ERROR_UNKNOWN;
     if (restore) ++restored;
     else ++cold;
     *pipeline = reinterpret_cast<VkPipeline>(next++);
@@ -97,7 +102,7 @@ VKAPI_ATTR void VKAPI_CALL DestroyPipeline(VkDevice, VkPipeline, const VkAllocat
 VKAPI_ATTR VkResult VKAPI_CALL Data(VkDevice, const VkPipelineBinaryDataInfoKHR* info, VkPipelineBinaryKeyKHR* key, std::size_t* size, void* data) {
     key->keySize = 1;
     key->key[0] = binaries.at(info->pipelineBinary);
-    *size = 1;
+    *size = oversized ? 256u * 1024u * 1024u + 1u : 1;
     if (data != nullptr) *static_cast<std::uint8_t*>(data) = key->key[0];
     return VK_SUCCESS;
 }
@@ -235,6 +240,7 @@ int main() try {
     store.CreateComputePipeline(info, spirv, layout, &pipeline);
     Check(cold == 6, "failed capture did not retry without capture");
     captureFailure = false;
+    ++spirv[2];
     Environment("APS5_NO_PIPELINE_BINARIES", "1");
     PipelineBinaryStore disabled(context, properties);
     disabled.CreateComputePipeline(info, spirv, layout, &pipeline);
@@ -295,6 +301,37 @@ int main() try {
         afterMarker.CreateComputePipeline(info, spirv, layout, &pipeline);
     }
     Check(restored == restoredBeforeMarker + 2 && cold == coldBeforeMarker && binaries.empty(), "pending threshold marker erased a competing captured binary");
+    bool failuresRemembered = true;
+    for (const auto failure : {"extraction failure", "oversized binary", "rejected capture build"}) {
+        ++spirv[2];
+        Environment("APS5_PIPELINE_BINARY_MIN_MS", "1");
+        PipelineBinaryStore failing(context, properties);
+        const auto recipe = failing.Key(info, spirv, layout);
+        char name[32];
+        std::snprintf(name, sizeof(name), "%016llx.bin", static_cast<unsigned long long>(ShaderRecompiler::HashBytes(recipe)));
+        const auto binaryFile = root / "driver" / "binaries" / name;
+        missing = std::strcmp(failure, "extraction failure") == 0;
+        oversized = std::strcmp(failure, "oversized binary") == 0;
+        captureFailure = std::strcmp(failure, "rejected capture build") == 0;
+        const auto capturesBefore = captures;
+        duringCapture = [] { std::this_thread::sleep_for(std::chrono::milliseconds(5)); };
+        failing.CreateComputePipeline(info, spirv, layout, &pipeline);
+        Check(pipeline != VK_NULL_HANDLE && captures == capturesBefore + 1 && !std::filesystem::exists(binaryFile) && binaries.empty(), "failure case did not build without a stored binary");
+        missing = false;
+        oversized = false;
+        captureFailure = false;
+        const auto legacyBeforeFailure = legacyCreates;
+        PipelineBinaryStore reopenedFailure(context, properties);
+        reopenedFailure.CreateComputePipeline(info, spirv, layout, &pipeline);
+        const bool ordinary = pipeline != VK_NULL_HANDLE && legacyCreates == legacyBeforeFailure + 1 && captures == capturesBefore + 1;
+        Environment("APS5_PIPELINE_BINARY_MIN_MS", "0");
+        PipelineBinaryStore loweredFailure(context, properties);
+        loweredFailure.CreateComputePipeline(info, spirv, layout, &pipeline);
+        const bool loweredOrdinary = pipeline != VK_NULL_HANDLE && legacyCreates == legacyBeforeFailure + 2 && captures == capturesBefore + 1;
+        std::fprintf(stderr, "%s: %s survives recreation and a lowered time threshold\n", ordinary && loweredOrdinary ? "PASS" : "FAIL", failure);
+        failuresRemembered = failuresRemembered && ordinary && loweredOrdinary;
+    }
+    Check(failuresRemembered, "capture failures did not retain the ordinary driver cache path");
     std::puts("pipeline binary keys, round-trip, compatibility, corruption, rejection and fallback passed");
 } catch (const std::exception& error) {
     std::fprintf(stderr, "%s\n", error.what());
