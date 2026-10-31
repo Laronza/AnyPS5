@@ -746,7 +746,7 @@ void DrawupGradientSegments() {
     {
         SegmentFixture f;
         auto* frame = reinterpret_cast<FontGraphicsFrame*>(&f.frame);
-        TestSegmentStop stale{0x20, 0, 0, 99, nullptr, 0.7f, 0};
+        TestSegmentStop stale{0x20, 0, 0, 99, nullptr, 0.3f, 0};
         f.record.next = reinterpret_cast<TestDrawupRecord*>(&stale);
         Require(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.5f, color) == 0);
         auto* stop = reinterpret_cast<TestSegmentStop*>(f.record.next);
