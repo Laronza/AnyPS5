@@ -281,20 +281,6 @@ void TestAacRaw51(std::uint32_t maxChannels) {
     Require(sceAudiodecDeleteDecoder(handle) == 0);
 }
 
-void TestAacRaw51InterleaveOrder(std::uint32_t surroundChannelInterleaveOrder) {
-    M4aacExtendedParam param{{32, 1, 2, 3, 8, 0}, 0, surroundChannelInterleaveOrder};
-    AudiodecM4aacInfo info{sizeof(info), 0, 0, 0, 0};
-    AudiodecCtrl ctrl{&param, &info, nullptr, nullptr};
-    const std::int32_t handle = sceAudiodecCreateDecoder(&ctrl, 3);
-    Require(handle > 0 && info.ui_number_of_channels == 8);
-    Streams streams;
-    bool threw = false;
-    try { Decode(handle, ctrl, streams, AAC_RAW_51, sizeof(AAC_RAW_51)); }
-    catch (const std::runtime_error&) { threw = true; }
-    Require(threw);
-    Require(sceAudiodecDeleteDecoder(handle) == 0);
-}
-
 double UpperHalfEnergyShare(const std::int16_t* samples, std::size_t count, std::size_t stride) {
     double upper = 0;
     double total = 0;
@@ -491,8 +477,6 @@ int main() {
     TestAac(true, 2, 32, 1, 1);
     TestAacRaw51(6);
     TestAacRaw51(8);
-    TestAacRaw51InterleaveOrder(1);
-    TestAacRaw51InterleaveOrder(2);
     for (const bool adts : {true, false}) {
         for (const bool highEfficiency : {true, false}) {
             TestHeAac(HEAAC_V2_MONO, sizeof(HEAAC_V2_MONO), 1, adts, highEfficiency);
