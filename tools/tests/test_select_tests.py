@@ -32,7 +32,6 @@ PROJECT = {
 }
 
 
-@unittest.skipUnless(shutil.which("ninja") and (shutil.which("gcc") or shutil.which("cc")), "needs ninja and a C compiler")
 def excessively_nested_json(test):
     depth = sys.getrecursionlimit() + 64
     while True:
@@ -46,6 +45,7 @@ def excessively_nested_json(test):
             test.fail("the JSON decoder accepts every probed nesting depth")
 
 
+@unittest.skipUnless(shutil.which("ninja") and (shutil.which("gcc") or shutil.which("cc")), "needs ninja and a C compiler")
 class SelectFixture(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
