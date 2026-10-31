@@ -18,7 +18,7 @@ constexpr int DecodeDigit(char c) {
 
 }
 
-extern "C" long APS5_VABI a64l_nid_postfix(const char* s) {
+extern "C" std::int64_t APS5_VABI a64l_nid_postfix(const char* s) {
     if (!s || *s == '\0') return 0;
     std::uint32_t value = 0;
     int shift = 0;
@@ -27,10 +27,10 @@ extern "C" long APS5_VABI a64l_nid_postfix(const char* s) {
         if (digit < 0) break;
         value |= static_cast<std::uint32_t>(digit) << shift;
     }
-    return static_cast<long>(static_cast<std::int32_t>(value));
+    return static_cast<std::int64_t>(static_cast<std::int32_t>(value));
 }
 
-extern "C" int APS5_VABI l64a_r_nid_postfix(long value, char* buffer, int buflen) {
+extern "C" int APS5_VABI l64a_r_nid_postfix(std::int64_t value, char* buffer, int buflen) {
     if (!buffer || buflen <= 0) return -1;
     auto v = static_cast<std::uint32_t>(value);
     if (v == 0) {
@@ -49,7 +49,7 @@ extern "C" int APS5_VABI l64a_r_nid_postfix(long value, char* buffer, int buflen
     return 0;
 }
 
-extern "C" char* APS5_VABI l64a_nid_postfix(long value) {
+extern "C" char* APS5_VABI l64a_nid_postfix(std::int64_t value) {
     thread_local char buf[7];
     buf[0] = '\0';
     l64a_r_nid_postfix(value, buf, static_cast<int>(sizeof(buf)));

@@ -95,6 +95,9 @@ static void CheckLittleEndianOrdering() {
 }
 
 static void CheckBoundaries() {
+    Check(a64l_nid_postfix("zzzzz1") == INT64_C(-1));
+    Check(a64l_nid_postfix(".....0") == INT64_C(-2147483648));
+    Check(std::strcmp(l64a_nid_postfix(INT64_C(0x100000001)), "/") == 0);
     Check(a64l_nid_postfix("zz") == 4095);
     Check(std::strcmp(l64a_nid_postfix(4095), "zz") == 0);
 
