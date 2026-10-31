@@ -795,6 +795,7 @@ void DrawupGradientSegments() {
         const float nan[4] = {0.5f, NaN, 0.5f, 0.5f};
         Require(sceFontGraphicsAppendGradientSegment(frame, &f.record, NaN, color) == 0);
         Require(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.75f, nan) == 0);
+        Require(reinterpret_cast<TestSegmentStop*>(f.record.next)->color == 0x80800080);
     }
     {
         SegmentFixture f;
