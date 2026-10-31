@@ -300,7 +300,7 @@ int APS5_VABI sceRudpInitiate(int ctx_id, const void* to, uint32_t tolen, uint16
     return RUDP_ERROR_CONN_REFUSED;
 }
 
-int APS5_VABI sceRudpGetContextStatus(int ctx_id, void* status, uint32_t size) {
+int APS5_VABI sceRudpGetContextStatus(int ctx_id, void* status, std::size_t size) {
     std::lock_guard<std::mutex> lk(g_mutex);
     if (!g_inited) {
         return RUDP_ERROR_NOT_INITIALIZED;

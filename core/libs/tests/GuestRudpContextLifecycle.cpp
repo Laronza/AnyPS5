@@ -188,6 +188,7 @@ int main() {
         std::memset(status, 0x5a, sizeof(status));
         Require(sceRudpGetContextStatus(ctx, status, sizeof(status)) == invalidArgument);
         Require(sceRudpGetContextStatus(ctx, status, 0) == invalidArgument);
+        Require(sceRudpGetContextStatus(ctx, status, 0x100000010ull) == invalidArgument);
         for (std::size_t i = 0; i < sizeof(status); ++i) Require(status[i] == 0x5a);
         Require(sceRudpGetContextStatus(ctx, status, 0x30) == 0);
         for (std::size_t i = 0; i < sizeof(status); ++i) Require(status[i] == (i >= 0x30 ? 0x5a : i >= 4 && i < 8 ? 0xFF : 0));
