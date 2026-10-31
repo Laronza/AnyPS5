@@ -5,6 +5,9 @@ on:
     paths:
       - 'core/libs/prx/**'
       - 'tools/progress.py'
+      - 'tools/shader_scan.py'
+      - 'tools/rdna2_isa_forms.txt'
+      - 'core/shader/recompiler/**'
       - '.github/workflows/progress-report.yml'
 
 permissions:

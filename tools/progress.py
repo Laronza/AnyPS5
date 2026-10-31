@@ -13,10 +13,16 @@ tokenizer = importlib.util.module_from_spec(tokenizer_spec)
 tokenizer_spec.loader.exec_module(tokenizer)
 CPP_TOKEN = tokenizer.CPP_TOKEN
 
+scan_spec = importlib.util.spec_from_file_location("anyps5_shader_scan", Path(__file__).with_name("shader_scan.py"))
+shader_scan = importlib.util.module_from_spec(scan_spec)
+sys.modules[scan_spec.name] = shader_scan
+scan_spec.loader.exec_module(shader_scan)
+
 ROOT = Path(__file__).resolve().parent.parent
 PRX = ROOT / "core" / "libs" / "prx"
 OPCODES = ROOT / "core" / "shader" / "recompiler" / "RdnaDecoder" / "include" / "RdnaDecoder" / "RdnaOpcode.hpp"
 ISA = Path(__file__).resolve().parent / "rdna_isa.txt"
+ISA_FORMS = Path(__file__).resolve().parent / "rdna2_isa_forms.txt"
 SOURCE = f'https://github.com/{os.environ.get("GITHUB_REPOSITORY", "boykopovar/AnyPS5")}/blob/main'
 DEFINITION = re.compile(r"\bAPS5_VABI\s+(\w+)\s*\([^;{]*\)\s*(?:noexcept\s*)?(?:try\s*)?\{")
 EXPORT = re.compile(r"\bAPS5_EXPORT\s*\(\s*LITERAL\s*,\s*(\w+)\s*\)")
@@ -257,6 +263,10 @@ def collect_shaders():
     return result
 
 
+def collect_shader_source(root=None):
+    return shader_scan.measure(root or ROOT, shader_scan.load_isa_forms(ISA_FORMS))
+
+
 def worst_ratio(row, side):
     area = sum(row)
     return max(max(side * side * r / area ** 2, area ** 2 / (side * side * r)) for r in row)
@@ -342,10 +352,10 @@ def render(libraries, shaders):
     return "\n".join(parts)
 
 
-def badge(label, data):
+def badge(label, data, value=None):
     percent = data["percent"]
     color = "#4c1" if percent >= 90 else "#97ca00" if percent >= 60 else "#dfb317" if percent >= 30 else "#fe7d37"
-    value = f"{percent}%"
+    value = value or f"{percent}%"
     left, right = 10 + 7 * len(label), 10 + 7 * len(value)
     width = left + right
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20" role="img" aria-label="{label}: {value}">'
@@ -374,7 +384,40 @@ def table(heading, column, data):
     return "\n".join(rows)
 
 
-def summary(libraries, shaders):
+def shader_source_percent(source):
+    instructions = source["instructions"]
+    return round(100 * instructions["decoded"] / instructions["total"], 2) if instructions["total"] else 0
+
+
+def shader_source_badge(source):
+    instructions = source["instructions"]
+    return badge("shader forms decoded", {"percent": shader_source_percent(source)}, f'{instructions["decoded"]}/{instructions["total"]}')
+
+
+def shader_source_section(source):
+    if not source:
+        return ""
+    instructions, dpp = source["instructions"], source["dpp"]
+    return "\n".join([
+        "<h2>Shader recompiler source coverage</h2>",
+        "<table>",
+        "<tr><th>Measure</th><th>Count</th><th>Of</th></tr>",
+        f'<tr><td>Instruction forms decoded</td><td>{instructions["decoded"]}</td><td>{instructions["total"]}</td></tr>',
+        f'<tr><td>Instruction forms with a translator case</td><td>{instructions["translated"]}</td><td>{instructions["total"]}</td></tr>',
+        f'<tr><td>DPP forms decoded</td><td>{dpp["decoded"]}</td><td>{dpp["total"]}</td></tr>',
+        f'<tr><td>Unsupported-throw sites in the recompiler</td><td>{source["unsupported_throws"]}</td><td></td></tr>',
+        "</table>",
+        "<p>This is source coverage, not game compatibility. A form counts as decoded when the decoder's opcode tables map it "
+        "to an opcode (VOP3 and DPP rules included); it counts as translated when the translator has a case for that opcode, "
+        "which does not show the translation is correct. Forms are the base, VOP3 and DPP encodings of the AMD RDNA 2 "
+        f'instruction set (<a href="{SOURCE}/tools/rdna2_isa_forms.txt">tools/rdna2_isa_forms.txt</a>); SDWA forms are not counted. '
+        f'Unsupported throws are <code>throw</code> statements in <a href="{SOURCE}/core/shader/recompiler">core/shader/recompiler</a> '
+        "whose message or exception type says unsupported or not implemented. "
+        f'<a href="{SOURCE}/tools/shader_scan.py">How it is measured</a>.</p>',
+    ])
+
+
+def summary(libraries, shaders, shader_source=None):
     extra = ", ".join(f"<code>{escape(o)}</code>" for o in shaders["extra"])
     return "\n".join([
         '<!DOCTYPE html>',
@@ -394,6 +437,7 @@ def summary(libraries, shaders):
         "not every function exported by the PS5 firmware. Shared-source libraries are counted only at their source library. "
         "Libraries with no exports only provide an empty module for titles that load them. "
         f'<a href="{SOURCE}/docs/dev/PROGRESS.md">Counting rules</a>.</p>',
+        shader_source_section(shader_source),
         table("GPU shader instructions", "Encoding", shaders),
         f'<p>The total is the AMD RDNA 1 + RDNA 2 instruction list (<a href="{SOURCE}/tools/rdna_isa.txt">tools/rdna_isa.txt</a>). '
         f'An instruction is implemented when the <a href="{SOURCE}/core/shader/recompiler/RdnaDecoder">decoder</a> recognizes it. '
@@ -526,14 +570,21 @@ def require_distinct_reports(output):
                 raise ValueError(f"{path.name} and {other.name} in {output} are the same file")
 
 
-def write_site(output, libraries, shaders):
+def site_data(libraries, shaders, shader_source):
+    data = {"libraries": libraries, "shaders": shaders}
+    if shader_source:
+        data["shader_source"] = {key: value for key, value in shader_source.items() if key != "untranslated"}
+    return data
+
+
+def write_site(output, libraries, shaders, shader_source=None):
     output.mkdir(parents=True, exist_ok=True)
     require_distinct_reports(output)
-    (output / "progress.json").write_text(json.dumps({"libraries": libraries, "shaders": shaders}, indent=2), encoding="utf-8")
+    (output / "progress.json").write_text(json.dumps(site_data(libraries, shaders, shader_source), indent=2), encoding="utf-8")
     (output / "badge-libraries.svg").write_text(badge("libraries*", libraries), encoding="utf-8")
-    (output / "badge-shaders.svg").write_text(badge("shaders", shaders), encoding="utf-8")
+    (output / "badge-shaders.svg").write_text(shader_source_badge(shader_source) if shader_source else badge("shaders", shaders), encoding="utf-8")
     (output / "progress.svg").write_text(render(libraries, shaders), encoding="utf-8")
-    (output / "progress.html").write_text(summary(libraries, shaders), encoding="utf-8")
+    (output / "progress.html").write_text(summary(libraries, shaders, shader_source), encoding="utf-8")
 
 
 def validate_snapshot(snapshot):
@@ -569,6 +620,14 @@ def validate_snapshot(snapshot):
                     raise ValueError(f"{location}.{field} must be a list of strings")
 
 
+def regenerate_isa_forms(xml):
+    header = [line for line in ISA_FORMS.read_text(encoding="utf-8").splitlines() if line.startswith("#")]
+    forms = shader_scan.parse_isa_xml(xml.read_text(encoding="utf-8"))
+    ISA_FORMS.write_text("\n".join(header + [" ".join(map(str, form)) for form in forms]) + "\n", encoding="utf-8")
+    print(f"{ISA_FORMS}: {len(forms)} forms")
+    return 0
+
+
 def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
@@ -583,6 +642,10 @@ def main(argv=None):
                         help="print a markdown report of the changes between two progress.json files")
     parser.add_argument("--module", action="append", metavar="NAME",
                         help="limit library counts to these core/libs/prx directories; repeat to include several. Shader counts stay complete")
+    parser.add_argument("--require-shader-source", action="store_true",
+                        help="fail when the shader source scan cannot read the recompiler, instead of leaving its numbers out (the Pages workflow uses this)")
+    parser.add_argument("--regenerate-isa-forms", type=Path, metavar="XML",
+                        help="rewrite tools/rdna2_isa_forms.txt from AMD's amdgpu_isa_rdna2.xml (machine-readable ISA, MIT) and exit")
     parser.add_argument("--json", action="store_true",
                         help="print the progress.json object to stdout instead of the summary lines")
     try:
@@ -604,6 +667,8 @@ def main(argv=None):
             base, head = snapshots
             print(report(base, head), end="")
             return 0
+        if args.regenerate_isa_forms:
+            return regenerate_isa_forms(args.regenerate_isa_forms)
         if not args.output and not (args.module or args.json):
             parser.error("the output directory is required")
         if args.root:
@@ -614,21 +679,32 @@ def main(argv=None):
         except FileNotFoundError as error:
             parser.error(f"{args.root or ROOT} is not a source tree: {error.filename} not found")
         try:
+            shader_source = collect_shader_source(args.root)
+        except shader_scan.ScanError as error:
+            if args.require_shader_source:
+                parser.error(str(error))
+            print(f"warning: {error}; the shader source numbers are left out", file=sys.stderr)
+            shader_source = None
+        try:
             libraries = select_libraries(libraries, args.module or [])
         except ValueError as error:
             parser.error(str(error))
         if args.output:
             try:
-                write_site(args.output, libraries, shaders)
+                write_site(args.output, libraries, shaders, shader_source)
             except ValueError as error:
                 parser.error(str(error))
             except OSError as error:
                 parser.error(f"{args.output}: {error.strerror or error}")
         if args.json:
-            print(json.dumps({"libraries": libraries, "shaders": shaders}, indent=2))
+            print(json.dumps(site_data(libraries, shaders, shader_source), indent=2))
         else:
             print(f'libraries {libraries["done"]}/{libraries["total"]} ({libraries["percent"]}%)')
             print(f'shaders {shaders["done"]}/{shaders["total"]} ({shaders["percent"]}%)')
+            if shader_source:
+                instructions = shader_source["instructions"]
+                print(f'shader forms decoded {instructions["decoded"]}/{instructions["total"]} ({shader_source_percent(shader_source)}%), '
+                      f'translated {instructions["translated"]}, unsupported throws {shader_source["unsupported_throws"]}')
         return 0
     finally:
         PRX, OPCODES = previous

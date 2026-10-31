@@ -16,6 +16,21 @@ A library with no scanned definitions and no shared sources, such as one whose `
 
 [`tools/progress_history.py`](../../tools/progress_history.py) measures the first-parent history of `main` with the same rules as `progress.py` and writes `history.json`, `history.svg` and `history.html` (the chart with a tooltip per day plus a table, linked from the README and the end of the progress page). The chart plots counts, not percentages, so it shows how much is added over time: one panel for library functions and one for shader instructions, each on its own scale with the implemented count as a solid line and the declared total as a dashed one (for shaders the declared total is the instruction list in `tools/rdna_isa.txt`); the current percentage sits next to each panel's implemented label. It takes one point per UTC day, at the last commit of the day, and skips commits whose tree lacks the scanned paths. The chart compacts as days accumulate: up to 14 days it labels every day, up to 150 days one label per Monday, beyond that one per month; points are drawn up to 45 days, and every day keeps a hover tooltip, while the table and `history.json` keep every day. Old trees are measured with today's counting rules and instruction list, so the series is comparable but not what the page showed on that day. The workflow checks out the full history for it.
 
+## Shader source coverage
+
+The shaders badge and the "Shader recompiler source coverage" section of the progress page come from [`tools/shader_scan.py`](../../tools/shader_scan.py). They measure the shader recompiler's source, not any game: source coverage, not game compatibility. The older "GPU shader instructions" table counts instruction names that have an `RdnaOpcode` enumerator, which reached 100%, so it no longer drives the badge.
+
+The scan takes every encoded form of every instruction in AMD's RDNA 2 instruction set from [`tools/rdna2_isa_forms.txt`](../../tools/rdna2_isa_forms.txt). A form is the base encoding, the VOP3 encoding of a VOP1, VOP2 or VOPC instruction, or a DPP16 or DPP8 word on a VOP1 or VOP2 instruction. SDWA forms are not counted, because whether the decoder accepts one depends on selector bits that a source scan cannot tell apart.
+
+- **Decoded:** the decoder's opcode tables under `core/shader/recompiler/RdnaDecoder/src` map the form to an `RdnaOpcode`, applying the same VOP3 opcode offsets and the VOP2 and DPP refusals as the decoder. The badge shows decoded forms out of all base and VOP3 forms.
+- **Translated:** that `RdnaOpcode` has a `case` label in `TranslationContext::emitScalar`, `emitVector`, `emitMemory` or `emitInterpolation`. A case label shows the translator handles the opcode at all, not that the translation is correct.
+- **DPP forms** are reported separately.
+- **Unsupported throws:** `throw` statements under `core/shader/recompiler` (tests excluded) whose message or exception type says unsupported or not implemented.
+
+When the recompiler is restructured so a table or function cannot be found, the scan stops with an error naming it. The Pages workflows pass `--require-shader-source`, so nothing is published from a failed scan; without the flag `progress.py` prints a warning and leaves the shader source numbers out.
+
+`tools/rdna2_isa_forms.txt` is derived from AMD's machine-readable ISA XML (`amdgpu_isa_rdna2.xml`, published under the MIT licence; the file keeps AMD's copyright and permission notice). To refresh it for a newer release, run `python3 tools/progress.py --regenerate-isa-forms amdgpu_isa_rdna2.xml`.
+
 ## Comparisons
 
 Comparisons identify functions by library and name. When a head group becomes a shared-source wrapper, its previous definitions are compared under the source library's identity. Removing a duplicate implementation is reported as sharing sources, without reporting the retained functions as removed.
