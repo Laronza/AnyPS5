@@ -713,7 +713,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(payload["shaders"], shaders)
         self.assertNotIn("libraries 1/2", output)
         code, output = self.run_main(["--module", "libScePad"], libraries, shaders)
-        self.assertEqual(output, "libraries 1/2 (50.0%)\nshaders 2/4 (50.0%)\n"
+        self.assertEqual(output, "libraries 1/2 (50.0%)\nshader opcode names declared 2/4 (50.0%)\n"
                                  "shader forms decoded 3/5 (60.0%), translated 1, unsupported throws 3\n")
         stderr = io.StringIO()
         with patch("sys.stderr", stderr), self.assertRaises(SystemExit) as raised:

@@ -724,7 +724,7 @@ def main(argv=None):
             print(json.dumps(site_data(libraries, shaders, shader_source), indent=2))
         else:
             print(f'libraries {libraries["done"]}/{libraries["total"]} ({libraries["percent"]}%)')
-            print(f'shaders {shaders["done"]}/{shaders["total"]} ({shaders["percent"]}%)')
+            print(f'shader opcode names declared {shaders["done"]}/{shaders["total"]} ({shaders["percent"]}%)')
             if shader_source:
                 instructions = shader_source["instructions"]
                 print(f'shader forms decoded {instructions["decoded"]}/{instructions["total"]} ({shader_source_percent(shader_source)}%), '

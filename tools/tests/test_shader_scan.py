@@ -21,7 +21,7 @@ progress = load("anyps5_progress_for_shader_scan", "progress.py")
 
 DECODER = "core/shader/recompiler/RdnaDecoder/src/"
 KEYS = {"VOP3:VOP1": "Vop3EncodedVop1", "MIMG": "Image", "VOP3P": "Vop3p"}
-ENTRIES = {"SOP1": {3: "SMovB32"}, "VOP2": {3: "VAddF32", 5: "VMacF32"}, "VOP1": {5: "VCvtF32I32"},
+ENTRIES = {"SOP1": {3: "SMovB32"}, "VOP2": {0: "VFirstF32", 3: "VAddF32", 5: "VMacF32", 0x3F: "VLastF32", 0x40: "VPastF32"}, "VOP1": {5: "VCvtF32I32"},
            "VOP3:VOP1": {0: "VMovB32", 2: "VCvtF32I32"}, "VOPC": {0xC0: "VCmpEqF32", 0x100: "VCmpNew"}}
 
 ISA_XML = """<Spec><ISA><Instructions>
@@ -46,6 +46,9 @@ ISA = [
     ("V_ADD_F32", "VOP2", "base", 3),
     ("V_ADD_F32", "VOP2", "vop3", 0x103),
     ("V_MAC_F32", "VOP2", "vop3", 0x105),
+    ("V_FIRST_F32", "VOP2", "vop3", 0x100),
+    ("V_LAST_F32", "VOP2", "vop3", 0x13F),
+    ("V_PAST_F32", "VOP2", "vop3", 0x140),
     ("V_ADD_F32", "VOP2", "dpp16", 3),
     ("V_ADD_F32", "VOP2", "dpp8", 3),
     ("V_CVT_F32_I32", "VOP1", "base", 5),
@@ -140,11 +143,11 @@ class ScanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             write_tree(directory)
             result = shader_scan.measure(directory, ISA)
-        self.assertEqual(result["instructions"], {"total": 11, "decoded": 8, "translated": 5})
+        self.assertEqual(result["instructions"], {"total": 14, "decoded": 10, "translated": 5})
         self.assertEqual(result["dpp"], {"total": 3, "decoded": 1})
-        self.assertEqual(result["untranslated"], ["V_ADD_F32", "V_MOV_B32"])
+        self.assertEqual(result["untranslated"], ["V_ADD_F32", "V_FIRST_F32", "V_LAST_F32", "V_MOV_B32"])
         by_form = {(f["encoding"], f["form"]): (f["total"], f["decoded"], f["translated"]) for f in result["forms"]}
-        self.assertEqual(by_form, {("SOP1", "base"): (2, 1, 1), ("VOP2", "base"): (1, 1, 0), ("VOP2", "vop3"): (2, 1, 0),
+        self.assertEqual(by_form, {("SOP1", "base"): (2, 1, 1), ("VOP2", "base"): (1, 1, 0), ("VOP2", "vop3"): (5, 3, 0),
                                    ("VOP2", "dpp16"): (1, 1, 0), ("VOP2", "dpp8"): (1, 0, 0),
                                    ("VOP1", "base"): (1, 1, 1), ("VOP1", "vop3"): (2, 2, 1), ("VOP1", "dpp16"): (1, 0, 0),
                                    ("VOPC", "vop3"): (2, 1, 1), ("EXP", "base"): (1, 1, 1)})
