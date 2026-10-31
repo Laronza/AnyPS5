@@ -483,7 +483,7 @@ bool DrawupColorValid(const float* color) {
 }
 
 std::uint8_t* SegmentArenaAllocate(FontSegmentArena* arena, std::uint32_t slots) {
-    if (!arena || !slots) return nullptr;
+    if (!arena || !slots || slots > arena->total) return nullptr;
     FontSegmentNode* const nodes = arena->nodes;
     FontSegmentNode* node = arena->scan;
     FontSegmentNode* const sentinel = arena->sentinel;
@@ -545,8 +545,7 @@ bool SegmentWrite(FontDrawupFrame* frame, FontSegmentArena* arena,
         std::uint8_t* unit = frame->unit;
         if (!unit || !offset) {
             if (scePthreadMutexLock(arena->mutex) != 0) return false;
-            const std::uint64_t slots64 = (std::uint64_t{frame->unitSize} + 7 + arena->slotSize) / arena->slotSize;
-            const std::uint32_t slots = slots64 > 0xffffffffu ? 0xffffffffu : static_cast<std::uint32_t>(slots64);
+            const std::uint32_t slots = (frame->unitSize + 7 + arena->slotSize) / arena->slotSize;
             std::uint8_t* const memory = SegmentArenaAllocate(arena, slots);
             if (memory) {
                 arena->statUsed = arena->used;
@@ -563,7 +562,9 @@ bool SegmentWrite(FontDrawupFrame* frame, FontSegmentArena* arena,
         std::uint32_t chunk = frame->unitSize - offset;
         if (chunk > remaining) chunk = remaining;
         std::uint8_t* const target = unit + offset + 8;
-        std::memcpy(target, source, chunk);
+        std::uint8_t* const limit = arena->memory + static_cast<std::size_t>(arena->total) * arena->slotSize;
+        const std::size_t room = target < limit ? static_cast<std::size_t>(limit - target) : 0;
+        if (room) std::memcpy(target, source, chunk < room ? chunk : room);
         if (first && !*first) *first = target;
         source += chunk;
         frame->unitUsed += chunk;

@@ -779,10 +779,14 @@ void DrawupGradientSegments() {
         SegmentFixture f;
         auto* frame = reinterpret_cast<FontGraphicsFrame*>(&f.frame);
         f.frame.unitSize = 0xffffffff;
-        RequireError(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.5f, color), NoSegmentSpace);
-        Require(f.frame.error == NoSegmentSpace && f.frame.unit == nullptr && f.frame.unitHead == nullptr);
-        Require(f.record.next == nullptr);
-        Require(f.resource.arena.used == 0);
+        std::memset(f.memory, 0xa5, sizeof(f.memory));
+        Require(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.5f, color) == 0);
+        const std::uint32_t slots = (0xffffffffu + 7 + SegmentFixture::SlotSize) / SegmentFixture::SlotSize;
+        Require(slots == 2 && f.resource.arena.used == slots);
+        Require(f.frame.unitUsed == 0x18 && f.frame.unit == f.memory + 248 && f.frame.unitHead == f.frame.unit);
+        Require(f.record.next == reinterpret_cast<TestDrawupRecord*>(f.memory + 256));
+        Require(AllBytes(f.memory, 0, 248, 0xa5));
+        Require(AllBytes(f.memory, 248, 256, 0));
     }
     {
         SegmentFixture f;
