@@ -469,7 +469,7 @@ void DrawupFillRecords() {
         Require(f.pool.used == 1 && f.pool.entries[0].used == 1);
         const float nanColor[4] = {NaN, 0.0f, 0.0f, 0.0f};
         Require(sceFontGraphicsDrawupFillFlatColor(frame, nanColor, &out) == 0);
-        Require(static_cast<TestDrawupRecord*>(out)->state == 0x80000000);
+        Require(static_cast<TestDrawupRecord*>(out)->state == 0x00000000);
         f.frame.error = 0;
         RequireError(sceFontGraphicsDrawupFillFlatColor(nullptr, color, &out), InvalidObject);
         f.frame.error = 0;

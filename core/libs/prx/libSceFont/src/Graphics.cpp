@@ -404,7 +404,9 @@ FontDrawupRecord* DrawupAllocate(FontDrawupFrame* frame, std::uint32_t mode, int
 
 std::uint32_t DrawupPackColor(const float* color) {
     const auto channel = [](float value) {
-        return static_cast<std::uint32_t>(static_cast<std::int32_t>(value * 255.0f + 0.5f));
+        const float scaled = value * 255.0f + 0.5f;
+        if (!(scaled >= -0x1p63f && scaled < 0x1p63f)) return std::uint32_t{0};
+        return static_cast<std::uint32_t>(static_cast<std::int64_t>(scaled));
     };
     return channel(color[0]) | (channel(color[1]) << 8) | (channel(color[2]) << 16) | (channel(color[3]) << 24);
 }
