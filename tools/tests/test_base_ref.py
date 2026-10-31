@@ -14,7 +14,7 @@ class BaseRefTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.repo = Path(directory.name)
-        self.git("init", "-q")
+        self.git("init", "-q", "-b", "fixture")
 
     def git(self, *arguments):
         environment = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1"}
