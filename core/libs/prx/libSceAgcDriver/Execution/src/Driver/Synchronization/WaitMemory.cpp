@@ -37,7 +37,9 @@ void PollSleep() {
 
 bool OwnStoreRejects(std::span<const std::uint32_t> packet, std::uint64_t awaited, std::size_t bytes, std::uint32_t queue) {
     const auto own = Graphics::Recorder::UnlandedOwnLabel(awaited, bytes, queue);
-    return own.has_value() && !Pm4::WaitComparesValue(packet, *own);
+    if (own.mask == 0) return false;
+    const std::uint64_t memory = bytes == 8 ? *reinterpret_cast<const volatile std::uint64_t*>(awaited) : *reinterpret_cast<const volatile std::uint32_t*>(awaited);
+    return !Pm4::WaitComparesValue(packet, (memory & ~own.mask) | own.value);
 }
 
 int Driver::waitTimeoutMs() {
