@@ -68,9 +68,8 @@ class BlockerTests(unittest.TestCase):
         checks = PASSING + [("intake", "completed", "failure"), ("labels", "in_progress", None), ("eligibility", "queued", None)]
         self.assertEqual(pr_ready.blockers(make(checks=checks)), [])
 
-    def test_a_failing_progress_report_blocks(self):
-        reasons = pr_ready.blockers(make(checks=PASSING + [("report", "completed", "failure")]))
-        self.assertEqual(reasons, ["failing: report"])
+    def test_a_failing_progress_report_does_not_block(self):
+        self.assertEqual(pr_ready.blockers(make(checks=PASSING + [("report", "completed", "failure")])), [])
 
     def test_skipped_conventions_do_not_pass(self):
         checks = [("conventions", "completed", "skipped"), ("relinker", "completed", "success")]
@@ -82,6 +81,8 @@ class BlockerTests(unittest.TestCase):
 
     def test_a_pull_request_counts_as_built_only_after_a_passing_build(self):
         self.assertTrue(pr_ready.built(make()))
+        self.assertTrue(pr_ready.built(make(checks=[("conventions", "completed", "success"),
+                                                    ("relinker (ubuntu-latest, g++)", "completed", "success")])))
         self.assertFalse(pr_ready.built(make(checks=[("conventions", "completed", "success"), ("linux", "completed", "skipped")])))
 
     def test_the_newest_run_of_a_check_wins(self):
@@ -168,17 +169,28 @@ class QueueTests(unittest.TestCase):
         body = pr_ready.queue_body([make(checks=[("conventions", "completed", "success")])], 1, 1)
         self.assertIn("by alice (no build ran)", body)
 
+    def test_checks_that_are_not_builds_do_not_count_as_a_build(self):
+        checks = [("conventions", "completed", "success"), ("report", "completed", "success"),
+                  ("library-portability", "completed", "success"), ("linux", "completed", "skipped")]
+        pr = make(checks=checks)
+        self.assertEqual(pr_ready.blockers(pr), [])
+        self.assertFalse(pr_ready.built(pr))
+
     def test_long_titles_are_cut(self):
         self.assertEqual(len(pr_ready.clean("a" * 500)), 100)
 
 
 class MainTests(unittest.TestCase):
-    def run_main(self, argv, prs, calls):
+    def run_main(self, argv, prs, calls, closed=(), current=""):
         pages = [{"data": {"repository": {"pullRequests": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": prs}}}}]
 
         def fake(*args):
             if args[:2] == ("api", "graphql"):
+                if any("CLOSED" in arg for arg in args):
+                    return json.dumps({"data": {"repository": {"pullRequests": {"nodes": [{"number": n} for n in closed]}}}})
                 return json.dumps(pages.pop(0))
+            if args[:2] == ("issue", "view"):
+                return current
             calls.append(args)
             return ""
         out, err = io.StringIO(), io.StringIO()
@@ -225,6 +237,18 @@ class MainTests(unittest.TestCase):
         self.run_main(["--issue", "3"], [node(number=7)], calls)
         self.assertEqual(calls[-1][:6], ("issue", "edit", "3", "-R", "o/r", "--body"))
         self.assertIn("#7 fix: x by alice", calls[-1][6])
+
+    def test_an_unchanged_issue_body_is_not_rewritten(self):
+        calls = []
+        body = pr_ready.queue_body([make(number=7)], 1, 1)
+        self.run_main(["--issue", "3"], [node(number=7, labels=["review queue"])], calls, current=body)
+        self.assertEqual(calls, [])
+
+    def test_closed_pull_requests_lose_the_label(self):
+        calls = []
+        _, out, _ = self.run_main([], [], calls, closed=[5])
+        self.assertEqual(calls, [("pr", "edit", "5", "-R", "o/r", "--remove-label", "review queue")])
+        self.assertIn("changed #5: -review queue", out)
 
     def test_explain_prints_the_blockers_and_writes_nothing(self):
         calls = []

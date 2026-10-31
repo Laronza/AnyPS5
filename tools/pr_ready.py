@@ -13,7 +13,8 @@ UNBLOCKS_LABEL = pr_labels.UNBLOCKS_LABEL
 QUEUE_SIZE = 30
 BLOCKING_LABELS = {"needs rebase", "perf numbers missing", "open PR limit"}
 CONVENTIONS_CHECK = "conventions"
-BOT_CHECKS = {"intake", "labels", "eligibility"}
+BOT_CHECKS = {"intake", "labels", "eligibility", "report"}
+BUILD_CHECKS = {"linux", "windows", "relinker", "relinker-asan", "register-context", "write-watch"}
 FAILED = {"failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale", "error"}
 PASSED = {"success", "neutral"}
 MARKER = "<!-- pr-review-queue -->"
@@ -41,6 +42,14 @@ query($owner: String!, $name: String!, $after: String, $size: Int!) {
         } } } } }
       }
     }
+  }
+}
+"""
+
+CLOSED_QUERY = """
+query($owner: String!, $name: String!, $label: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: [CLOSED, MERGED], labels: [$label], first: 100) { nodes { number } }
   }
 }
 """
@@ -127,7 +136,8 @@ def blockers(pr):
 
 
 def built(pr):
-    return any(check["conclusion"] in PASSED for check in latest_checks(pr["checks"]) if check["name"] != CONVENTIONS_CHECK)
+    return any(check["conclusion"] in PASSED for check in latest_checks(pr["checks"])
+               if str(check["name"]).split(" (")[0] in BUILD_CHECKS)
 
 
 def ranked(prs):
@@ -168,9 +178,18 @@ def fetch(repo):
         after = connection["pageInfo"]["endCursor"]
 
 
-def apply(repo, prs, queue, dry_run):
+def closed_with_label(repo):
+    owner, name = repo.split("/", 1)
+    page = json.loads(pr_labels.gh("api", "graphql", "-f", f"query={CLOSED_QUERY}", "-F", f"owner={owner}",
+                                   "-F", f"name={name}", "-f", f"label={QUEUE_LABEL}"))
+    if page.get("errors"):
+        raise ValueError(str(page["errors"])[:300])
+    return [node["number"] for node in listed(page["data"]["repository"]["pullRequests"])]
+
+
+def apply(repo, prs, queue, dry_run, closed=()):
     chosen = {pr["number"] for pr in queue}
-    changes = []
+    changes = [(number, "--remove-label") for number in closed]
     for pr in prs:
         if pr["number"] in chosen and QUEUE_LABEL not in pr["labels"]:
             changes.append((pr["number"], "--add-label"))
@@ -197,6 +216,7 @@ def main(argv=None):
     try:
         repo = pr_labels.repository()
         prs = fetch(repo)
+        closed = closed_with_label(repo) if args.explain is None else []
     except subprocess.CalledProcessError as error:
         parser.error((error.stderr or str(error)).strip())
     except (ValueError, KeyError, TypeError, RecursionError) as error:
@@ -210,9 +230,12 @@ def main(argv=None):
     ready = ranked(prs)
     queue = ready[:QUEUE_SIZE]
     try:
-        apply(repo, prs, queue, args.dry_run)
+        apply(repo, prs, queue, args.dry_run, closed)
         if args.issue is not None and not args.dry_run:
-            pr_labels.gh("issue", "edit", str(args.issue), "-R", repo, "--body", queue_body(queue, len(prs), len(ready)))
+            body = queue_body(queue, len(prs), len(ready))
+            current = pr_labels.gh("issue", "view", str(args.issue), "-R", repo, "--json", "body", "--jq", ".body")
+            if current.strip() != body.strip():
+                pr_labels.gh("issue", "edit", str(args.issue), "-R", repo, "--body", body)
     except subprocess.CalledProcessError as error:
         sys.exit(f"cannot update the queue: {(error.stderr or '').strip()}")
     print(f"{len(ready)} of {len(prs)} open pull requests have no blocker; {len(queue)} queued")
