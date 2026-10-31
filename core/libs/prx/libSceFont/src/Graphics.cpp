@@ -564,7 +564,8 @@ bool SegmentWrite(FontDrawupFrame* frame, FontSegmentArena* arena,
         std::uint8_t* const target = unit + offset + 8;
         std::uint8_t* const limit = arena->memory + static_cast<std::size_t>(arena->total) * arena->slotSize;
         const std::size_t room = target < limit ? static_cast<std::size_t>(limit - target) : 0;
-        if (room) std::memcpy(target, source, chunk < room ? chunk : room);
+        if (room < chunk) return false;
+        std::memcpy(target, source, chunk);
         if (first && !*first) *first = target;
         source += chunk;
         frame->unitUsed += chunk;
@@ -768,7 +769,10 @@ int GraphicsAppendGradientSegment(FontGraphicsFrame* graphicsObject, void* gradi
         offset = frame->unitUsed % frame->unitSize;
         if (frame->unit && offset) {
             const std::uint32_t tail = frame->unitSize - offset;
-            std::memset(frame->unit + offset + 8, 0, tail);
+            std::uint8_t* const tailTarget = frame->unit + offset + 8;
+            std::uint8_t* const limit = arena->memory + static_cast<std::size_t>(arena->total) * arena->slotSize;
+            const std::size_t tailRoom = tailTarget < limit ? static_cast<std::size_t>(limit - tailTarget) : 0;
+            std::memset(tailTarget, 0, tail < tailRoom ? tail : tailRoom);
             frame->unitUsed += tail;
         }
     }
