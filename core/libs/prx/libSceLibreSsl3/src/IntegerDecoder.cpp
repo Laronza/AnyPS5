@@ -138,7 +138,7 @@ void* APS5_VABI d2i_ASN1_INTEGER_nid_postfix(void** output, const unsigned char*
     if (!input || !*input) NotImplemented_nid_no_patch(__func__);
     std::span<const unsigned char> remaining(*input, static_cast<std::size_t>(length));
     auto content = ReadInteger(remaining);
-    if (!content) return nullptr;
+    if (!content || content->size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) return nullptr;
     if (output) {
         FreeInteger(*output);
         *output = nullptr;
@@ -164,10 +164,6 @@ void* APS5_VABI d2i_ASN1_INTEGER_nid_postfix(void** output, const unsigned char*
     auto* data = static_cast<unsigned char*>(malloc_nid_postfix(content->size()));
     if (!data) return nullptr;
     std::memcpy(data, content->data(), content->size());
-    if (content->size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-        ClearAndFree(data, content->size());
-        return nullptr;
-    }
     if (negative) {
         unsigned int carry = 1;
         for (std::size_t index = content->size(); index != 0; --index) {

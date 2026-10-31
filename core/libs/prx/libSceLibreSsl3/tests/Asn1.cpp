@@ -278,6 +278,8 @@ void Rejections() {
     RejectKeepsOutput(integer, 2, {TooLongError, NestedError});
     for (const auto length : std::initializer_list<std::int64_t>{-1, -2, -1000, std::numeric_limits<std::int32_t>::min(), -(std::int64_t{1} << 40)})
         RejectKeepsOutput(integer, length, {});
+    const unsigned char oversized[] = {2, 0x84, 0x80, 0, 0, 0};
+    RejectKeepsOutput(oversized, (std::int64_t{1} << 31) + sizeof(oversized), {});
     RejectFreesOutput({2, 0});
     RejectFreesOutput({2, 2, 0, 0x7f});
     RejectFreesOutput({2, 2, 0xff, 0x80});
