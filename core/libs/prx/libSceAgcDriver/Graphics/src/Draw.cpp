@@ -1204,13 +1204,13 @@ MeshArgumentRules MeshArgumentRulesFor(const Context& context, const ShaderRecom
     return {indexCount, inputSize, step, mesh.primitivesPerGroup, context.meshLimits.maxMeshWorkGroupCount[0], context.meshLimits.maxMeshWorkGroupCount[1], context.meshLimits.maxMeshWorkGroupTotalCount};
 }
 
-MeshGrid MeshGridFor(const Context& context, std::uint32_t groups, std::uint32_t instances) {
+std::optional<MeshGrid> MeshGridFor(const Context& context, std::uint32_t groups, std::uint32_t instances) {
     const auto& limits = context.meshLimits;
-    if (groups == 0 || instances == 0 || instances > limits.maxMeshWorkGroupCount[1] || limits.maxMeshWorkGroupCount[0] == 0) return {0, 0, 0};
+    if (groups == 0 || instances > limits.maxMeshWorkGroupCount[1] || limits.maxMeshWorkGroupCount[0] == 0) return std::nullopt;
     const auto layers = (groups - 1u) / limits.maxMeshWorkGroupCount[0] + 1u;
     const auto columns = (groups - 1u) / layers + 1u;
-    if (layers > limits.maxMeshWorkGroupCount[2] || static_cast<std::uint64_t>(columns) * instances * layers > limits.maxMeshWorkGroupTotalCount) return {0, 0, 0};
-    return {columns, instances, layers};
+    if (layers > limits.maxMeshWorkGroupCount[2] || (instances != 0 && columns > limits.maxMeshWorkGroupTotalCount / instances / layers)) return std::nullopt;
+    return MeshGrid{columns, instances, layers};
 }
 
 MeshArguments ResolveMeshArguments(const Pm4::DrawArguments& record, const MeshArgumentRules& rules) {
@@ -1530,10 +1530,10 @@ DrawInputs prepareDrawInputs(const Context& context, const State& state, const P
             const auto primitives = (draw.indexCount - inputSize) / step + 1u;
             const auto groups = (primitives - 1u) / mesh.primitivesPerGroup + 1u;
             const auto grid = MeshGridFor(context, groups, draw.instanceCount);
-            APS5_LOG_OUT_DEBUG("Mesh primitives=%u groups=%u as %u x %u", primitives, groups, grid.groups, grid.layers);
-            Require(grid.groups != 0, "mesh draw exceeds workgroup count limits");
-            inputs.meshGroups = grid.groups;
-            inputs.meshLayers = grid.layers;
+            Require(grid.has_value(), "mesh draw exceeds workgroup count limits");
+            APS5_LOG_OUT_DEBUG("Mesh primitives=%u groups=%u as %u x %u", primitives, groups, grid->groups, grid->layers);
+            inputs.meshGroups = grid->groups;
+            inputs.meshLayers = grid->layers;
         }
     }
     if (state.stages.tessellation) Require(draw.indexCount % state.stages.tessellation->inputControlPoints == 0, "incomplete tessellation patch");

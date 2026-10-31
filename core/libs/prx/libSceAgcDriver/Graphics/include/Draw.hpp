@@ -88,7 +88,7 @@ struct MeshGrid {
     std::uint32_t instances;
     std::uint32_t layers;
 };
-MeshGrid MeshGridFor(const Context& context, std::uint32_t groups, std::uint32_t instances);
+std::optional<MeshGrid> MeshGridFor(const Context& context, std::uint32_t groups, std::uint32_t instances);
 MeshArguments ResolveMeshArguments(const Pm4::DrawArguments& record, const MeshArgumentRules& rules);
 
 // Why DrawWithRecipe did not record from the recipe (the caller then runs Draw): the draw is not

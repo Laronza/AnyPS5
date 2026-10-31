@@ -11692,19 +11692,26 @@ void meshArgumentTests() {
     context.meshLimits.maxMeshWorkGroupCount[2] = 3;
     const auto grid = [&](std::uint32_t groups, std::uint32_t instances, std::array<std::uint32_t, 3> expected) {
         const auto value = AgcDriver::Graphics::MeshGridFor(context, groups, instances);
-        return value.groups == expected[0] && value.instances == expected[1] && value.layers == expected[2];
+        return value.has_value() && value->groups == expected[0] && value->instances == expected[1] && value->layers == expected[2];
     };
+    const auto refused = [&](std::uint32_t groups, std::uint32_t instances) { return !AgcDriver::Graphics::MeshGridFor(context, groups, instances).has_value(); };
     Require(grid(1000, 1, {1000, 1, 1}), "groups at the X limit stay in one layer");
     Require(grid(1001, 1, {501, 1, 2}), "one group past the X limit splits the groups evenly over two layers");
     Require(grid(1001, 2, {501, 2, 2}), "instances keep Y when the groups take two layers");
     Require(grid(2999, 1, {1000, 1, 3}), "three layers at the X limit");
-    Require(grid(3001, 1, {0, 0, 0}), "more layers than the Z limit draw nothing");
+    Require(refused(3001, 1), "more layers than the Z limit are refused");
     context.meshLimits.maxMeshWorkGroupCount[2] = 10;
     Require(grid(4000, 1, {1000, 1, 4}), "groups at the total limit");
-    Require(grid(4001, 1, {0, 0, 0}), "groups whose layers pass the total limit draw nothing");
-    Require(grid(1001, 4, {0, 0, 0}), "groups times instances past the total limit draw nothing");
-    Require(grid(1, 601, {0, 0, 0}), "instances over the Y limit draw nothing");
-    Require(grid(0, 1, {0, 0, 0}) && grid(1, 0, {0, 0, 0}), "no groups or no instances draw nothing");
+    Require(refused(4001, 1), "groups whose layers pass the total limit are refused");
+    Require(refused(1001, 4), "groups times instances past the total limit are refused");
+    Require(refused(1, 601), "instances over the Y limit are refused");
+    Require(refused(0, 1), "no groups are refused");
+    Require(grid(1, 0, {1, 0, 1}) && grid(1001, 0, {501, 0, 2}), "no instances keep the split and draw nothing, as before");
+    context.meshLimits.maxMeshWorkGroupCount[0] = 800000000u;
+    context.meshLimits.maxMeshWorkGroupCount[1] = 0xffffffffu;
+    context.meshLimits.maxMeshWorkGroupCount[2] = 6u;
+    context.meshLimits.maxMeshWorkGroupTotalCount = 0xffffffffu;
+    Require(refused(0xffffffffu, 0xffffffffu), "a product of groups and instances past 64 bits is refused");
 }
 
 void meshLimitTests() {
