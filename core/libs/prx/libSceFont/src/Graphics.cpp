@@ -755,6 +755,8 @@ int GraphicsAppendGradientSegment(FontGraphicsFrame* graphicsObject, void* gradi
     stop.color = DrawupPackColor(rgba);
     auto* const object = frame->object;
     auto* const arena = &object->resource->arena;
+    if (!frame->unitSize)
+        return DrawupRecordError(frame, FONT_GRAPHICS_ERROR_NO_SEGMENT_SPACE);
     std::uint32_t offset = frame->unitUsed % frame->unitSize;
     if (!frame->unit) offset = 0;
     const std::uint32_t space = frame->unitSize - offset;
@@ -762,14 +764,12 @@ int GraphicsAppendGradientSegment(FontGraphicsFrame* graphicsObject, void* gradi
         const std::uint8_t pad[] = {0xff, static_cast<std::uint8_t>(space), 0, 0};
         SegmentWrite(frame, arena, pad, sizeof(pad), nullptr);
         offset = frame->unitUsed % frame->unitSize;
-        if (frame->unitSize && frame->unit && offset) {
+        if (frame->unit && offset) {
             const std::uint32_t tail = frame->unitSize - offset;
             std::memset(frame->unit + offset + 8, 0, tail);
             frame->unitUsed += tail;
         }
     }
-    if (!frame->unitSize)
-        return DrawupRecordError(frame, FONT_GRAPHICS_ERROR_NO_SEGMENT_SPACE);
     std::uint8_t* first = nullptr;
     if (!SegmentWrite(frame, arena, reinterpret_cast<const std::uint8_t*>(&stop),
             sizeof(stop), &first))

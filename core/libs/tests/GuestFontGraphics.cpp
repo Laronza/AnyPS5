@@ -785,6 +785,13 @@ void DrawupGradientSegments() {
     {
         SegmentFixture f;
         auto* frame = reinterpret_cast<FontGraphicsFrame*>(&f.frame);
+        f.frame.unitSize = 0;
+        RequireError(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.5f, color), NoSegmentSpace);
+        Require(f.frame.error == NoSegmentSpace && f.frame.unit == nullptr && f.frame.unitHead == nullptr);
+    }
+    {
+        SegmentFixture f;
+        auto* frame = reinterpret_cast<FontGraphicsFrame*>(&f.frame);
         const float nan[4] = {0.5f, NaN, 0.5f, 0.5f};
         Require(sceFontGraphicsAppendGradientSegment(frame, &f.record, NaN, color) == 0);
         Require(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.75f, nan) == 0);
