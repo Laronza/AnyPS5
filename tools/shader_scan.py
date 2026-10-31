@@ -3,7 +3,9 @@ from pathlib import Path
 
 RECOMPILER = "core/shader/recompiler/"
 DECODER = f"{RECOMPILER}RdnaDecoder/src/"
-SCANNED_DIRECTORIES = (RECOMPILER.rstrip("/"),)
+AGC_DRIVER = "core/libs/prx/libSceAgcDriver/"
+TEXTURE_FORMATS = f"{AGC_DRIVER}Graphics/src/TextureFormat.cpp"
+SCANNED_DIRECTORIES = (RECOMPILER.rstrip("/"), AGC_DRIVER.rstrip("/"))
 FORMS = ("base", "vop3", "dpp16", "dpp8")
 TEST_PATH = re.compile(r"/tests?/")
 
@@ -69,6 +71,10 @@ def body_after(source, header):
 
 def function_body(source, name):
     return body_after(source, re.compile(rf"\b{name}\s*\([^)]*\)\s*(?:const\s*)?\{{"))
+
+
+def array_body(source, name):
+    return body_after(source, re.compile(rf"\b{name}\s*(?:\[[^\]]*\])?\s*=?\s*\{{"))
 
 
 def case_names(body, kind):
@@ -253,15 +259,17 @@ def measure_forms(files, isa):
     translated = translator_cases(files)
     groups, untranslated = {}, set()
     for name, encoding, form, opcode in isa:
-        group = groups.setdefault((encoding, form), {"encoding": encoding, "form": form, "total": 0, "decoded": 0, "translated": 0})
+        group = groups.setdefault((encoding, form), {"encoding": encoding, "form": form, "total": 0, "decoded": 0, "translated": 0, "missing": [], "untranslated": []})
         group["total"] += 1
         op = decodes(decoder, name, encoding, form, opcode)
         if not op:
+            group["missing"].append(name)
             continue
         group["decoded"] += 1
         if op in translated:
             group["translated"] += 1
         else:
+            group["untranslated"].append(name)
             untranslated.add(name)
     ordered = sorted(groups.values(), key=lambda g: (g["encoding"], FORMS.index(g["form"])))
     return ordered, sorted(untranslated)
@@ -290,6 +298,41 @@ def unsupported_throws(files):
     return sorted(sites, key=lambda s: (s["file"], s["line"]))
 
 
+def image_formats(files):
+    enum_text = search(files, "IrBufferFormat enum", lambda text: array_body(text, r"enum\s+class\s+IrBufferFormat\s*:\s*[\w:]+"))
+    names = {int(m.group(2)): m.group(1) for m in re.finditer(r"(\w+)\s*=\s*(\d+)", enum_text)}
+    defined = search(files, "DefinedImageFormats", lambda text: array_body(text, "DefinedImageFormats"))
+    ranges = [(int(m.group(1)), int(m.group(2))) for m in re.finditer(r"\{\s*(\d+)u?\s*,\s*(\d+)u?\s*\}", defined)]
+    if not ranges:
+        raise ScanError("no DefinedImageFormats ranges")
+    info_table = search(files, "kFormatInfoTable", lambda text: array_body(text, "kFormatInfoTable"))
+    sampled = set(re.findall(r"\{\s*IrBufferFormat::(\w+)\s*,\s*true\b", info_table))
+    buffer = case_names(search(files, "GetFormatInfo()", lambda text: function_body(text, "GetFormatInfo")), "IrBufferFormat")
+    if TEXTURE_FORMATS not in files:
+        raise ScanError(TEXTURE_FORMATS)
+    text = strip_comments(files[TEXTURE_FORMATS])
+    host = {int(n) for n in re.findall(r"\{\s*(\d+)\s*,\s*VK_FORMAT_", array_body(text, "kFormatLookup") or "")}
+    remap = function_body(text, "remapGuestFormat") or ""
+    target = re.search(r"\?\s*(\d+)\s*:", remap)
+    if target and int(target.group(1)) in host:
+        host.update(int(n) for n in re.findall(r"==\s*(\d+)", remap))
+    if not host:
+        raise ScanError("no kFormatLookup entries")
+    values = [value for first, last in ranges for value in range(first, last + 1)]
+    return {"total": len(values),
+            "sampled": sum(1 for v in values if names.get(v) in sampled),
+            "buffer": sum(1 for v in values if names.get(v) in buffer),
+            "host": sum(1 for v in values if v in host)}
+
+
+def throw_areas(sites):
+    counts = {}
+    for site in sites:
+        name = site["file"].split("/", 1)[0] if "/" in site["file"] else "Recompiler"
+        counts[name] = counts.get(name, 0) + 1
+    return [{"name": name, "count": count} for name, count in sorted(counts.items(), key=lambda item: -item[1])]
+
+
 def read_tree(root):
     files = {}
     for directory in SCANNED_DIRECTORIES:
@@ -312,6 +355,9 @@ def measure(root, isa):
         "instructions": {"total": total(plain, "total"), "decoded": total(plain, "decoded"), "translated": total(plain, "translated")},
         "dpp": {"total": total(dpp, "total"), "decoded": total(dpp, "decoded")},
         "unsupported_throws": len(throws),
+        "throw_areas": throw_areas(throws),
+        "throw_sites": throws,
+        "formats": image_formats(files),
         "forms": forms,
         "untranslated": untranslated,
     }

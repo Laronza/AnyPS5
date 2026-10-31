@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -94,11 +95,24 @@ def write_tree(root, tables=None, throws=True):
             '/* throw std::runtime_error("not implemented in a block comment"); */\n'
             'void d() { throw UnsupportedInstructionError(op); }\n'
             'void e() { throw std::runtime_error("semi; colon is not implemented"); }\n')
+        files["core/shader/recompiler/Top.cpp"] = 'void f() { throw std::runtime_error("not implemented yet"); }\n'
         files["core/shader/recompiler/Ir/tests/LowerTests.cpp"] = 'void t() { throw std::runtime_error("Unsupported"); }\n'
     for path, text in files.items():
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(text, encoding="utf-8")
-    (root / "core/libs/prx/libSceAgcDriver").mkdir(parents=True, exist_ok=True)
+    formats = {
+        "core/libs/prx/libSceAgcDriver/Graphics/src/Formats.cpp": (
+            "enum class IrBufferFormat : std::uint32_t { Invalid = 0, R8 = 1, R16 = 2, R32 = 3, Rg8 = 4 };\n"
+            "constexpr std::array DefinedImageFormats = { std::pair{1u, 4u}, std::pair{7u, 7u} };\n"
+            "constexpr FormatInfo kFormatInfoTable[] = { {IrBufferFormat::R8, true}, {IrBufferFormat::R16, false}, {IrBufferFormat::R32, true} };\n"
+            "FormatInfo GetFormatInfo(IrBufferFormat f)\n{\n    switch (f)\n    {\n        case IrBufferFormat::R16: return {};\n        case IrBufferFormat::R32: return {};\n    }\n}\n"),
+        "core/libs/prx/libSceAgcDriver/Graphics/src/TextureFormat.cpp": (
+            "constexpr Entry kFormatLookup[] = { {1, VK_FORMAT_R8_UNORM}, {3, VK_FORMAT_R32_UINT}, {9, VK_FORMAT_R8_UINT} };\n"
+            "std::uint32_t remapGuestFormat(std::uint32_t f) { return f == 4 || f == 7 ? 3 : f; }\n"),
+    }
+    for path, text in formats.items():
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(text, encoding="utf-8")
 
 
 class IsaTests(unittest.TestCase):
@@ -145,6 +159,13 @@ class ScanTests(unittest.TestCase):
             result = shader_scan.measure(directory, ISA)
         self.assertEqual(result["instructions"], {"total": 14, "decoded": 10, "translated": 5})
         self.assertEqual(result["dpp"], {"total": 3, "decoded": 1})
+        self.assertEqual(result["unsupported_throws"], 4)
+        self.assertEqual(result["throw_areas"], [{"name": "Ir", "count": 3}, {"name": "Recompiler", "count": 1}])
+        self.assertEqual(result["formats"], {"total": 5, "sampled": 2, "buffer": 2, "host": 4})
+        self.assertEqual({f["encoding"] + " " + f["form"]: f["missing"] for f in result["forms"] if f["missing"]},
+                         {"SOP1 base": ["S_NEW"], "VOP1 dpp16": ["V_CVT_F32_I32"], "VOP2 vop3": ["V_MAC_F32", "V_PAST_F32"], "VOP2 dpp8": ["V_ADD_F32"], "VOPC vop3": ["V_CMP_NEW"]})
+        self.assertEqual({f["encoding"] + " " + f["form"]: f["untranslated"] for f in result["forms"] if f["untranslated"]},
+                         {"VOP2 base": ["V_ADD_F32"], "VOP2 vop3": ["V_ADD_F32", "V_FIRST_F32", "V_LAST_F32"], "VOP1 vop3": ["V_MOV_B32"], "VOP2 dpp16": ["V_ADD_F32"]})
         self.assertEqual(result["untranslated"], ["V_ADD_F32", "V_FIRST_F32", "V_LAST_F32", "V_MOV_B32"])
         by_form = {(f["encoding"], f["form"]): (f["total"], f["decoded"], f["translated"]) for f in result["forms"]}
         self.assertEqual(by_form, {("SOP1", "base"): (2, 1, 1), ("VOP2", "base"): (1, 1, 0), ("VOP2", "vop3"): (5, 3, 0),
@@ -156,7 +177,7 @@ class ScanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             write_tree(directory)
             sites = shader_scan.unsupported_throws(shader_scan.read_tree(directory))
-        self.assertEqual([(s["file"], s["line"]) for s in sites], [("Ir/Lower.cpp", 1), ("Ir/Lower.cpp", 6), ("Ir/Lower.cpp", 7)])
+        self.assertEqual([(s["file"], s["line"]) for s in sites], [("Ir/Lower.cpp", 1), ("Ir/Lower.cpp", 6), ("Ir/Lower.cpp", 7), ("Top.cpp", 1)])
         self.assertEqual(sites[0]["message"], "Unsupported image type")
 
     def test_a_missing_opcode_table_stops_the_scan_naming_it(self):
@@ -184,9 +205,11 @@ class ScanTests(unittest.TestCase):
 class ReportTests(unittest.TestCase):
     SOURCE = {"isa": "AMD RDNA 2", "instructions": {"total": 5, "decoded": 3, "translated": 1},
               "dpp": {"total": 2, "decoded": 1}, "unsupported_throws": 3, "untranslated": ["V_ADD_F32"],
-              "forms": [{"encoding": "SOP1", "form": "base", "total": 2, "decoded": 1, "translated": 1},
-                        {"encoding": "VOP2", "form": "vop3", "total": 3, "decoded": 2, "translated": 0},
-                        {"encoding": "VOP2", "form": "dpp16", "total": 2, "decoded": 1, "translated": 0}]}
+              "throw_areas": [{"name": "Translation", "count": 2}, {"name": "Recompiler", "count": 1}], "throw_sites": [],
+              "formats": {"total": 10, "sampled": 6, "buffer": 5, "host": 4},
+              "forms": [{"encoding": "SOP1", "form": "base", "total": 2, "decoded": 1, "translated": 1, "missing": ["S_NEW"], "untranslated": []},
+                        {"encoding": "VOP2", "form": "vop3", "total": 3, "decoded": 2, "translated": 0, "missing": ["V_X"], "untranslated": ["V_A", "V_B"]},
+                        {"encoding": "VOP2", "form": "dpp16", "total": 2, "decoded": 1, "translated": 0, "missing": ["V_Y"], "untranslated": ["V_Z"]}]}
     GROUP = {"percent": 100.0, "groups": [], "done": 0, "total": 0, "extra": []}
 
     def test_badge_shows_decoded_over_total_and_says_what_it_measures(self):
@@ -217,9 +240,36 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Shader forms decoded: 60.0% (3/5)", svg)
         self.assertIn("SOP1: 1/2", svg)
         self.assertIn("VOP2 in VOP3: 2/3", svg)
-        self.assertNotIn("dpp16", svg)
+        self.assertNotIn("VOP2 dpp16: 1/2", svg)
         self.assertNotIn("GPU shader instructions", svg)
         self.assertIn("GPU shader instructions", progress.render(dict(self.GROUP), dict(self.GROUP)))
+
+    def test_still_needed_groups_names_by_form_kind(self):
+        data = progress.still_needed(self.SOURCE)
+        self.assertEqual(data["lists"], [
+            ("Instruction forms not decoded (2)", ["SOP1: S_NEW", "VOP2 vop3: V_X"]),
+            ("DPP forms not decoded (1)", ["VOP2 dpp16: V_Y"]),
+            ("Decoded, no translator case (3)", ["VOP2 vop3: V_A, V_B", "VOP2 dpp16: V_Z"]),
+        ])
+        self.assertEqual(data["throws"], (3, [("Translation", 2), ("Recompiler", 1)]))
+        self.assertEqual(data["formats"], [("Sampled", 6, 10), ("Typed buffer", 5, 10), ("Vulkan host format", 4, 10)])
+
+    def test_still_needed_panel_lists_names_and_draws_the_bars(self):
+        svg = progress.render(dict(self.GROUP), dict(self.GROUP), self.SOURCE)
+        for expected in ("Still needed", "Instruction forms not decoded (2)", "SOP1: S_NEW", "VOP2 vop3: V_X",
+                         "DPP forms not decoded (1)", "VOP2 dpp16: V_Y", "Decoded, no translator case (3)", "VOP2 vop3: V_A, V_B", "VOP2 dpp16: V_Z",
+                         "Unsupported-throw sites by area (3)", "Translation: 2", "Recompiler: 1",
+                         "Sampled: 6/10", "Typed buffer: 5/10", "Vulkan host format: 4/10"):
+            self.assertIn(expected, svg)
+        self.assertRegex(svg, r'viewBox="0 0 1000 (\d+)" width="1000" height="\1"')
+        bars = [float(w) for w in re.findall(r'<rect x="505.00" y="[\d.]+" width="([\d.]+)" height="14.00" fill="#d29922"', svg)]
+        self.assertEqual(bars, [495.0, 247.5])
+        self.assertIn('fill="#2ea043"', svg)
+        html = progress.summary(dict(self.GROUP), dict(self.GROUP), self.SOURCE)
+        for expected in ("<h2>Still needed</h2>", "<code>SOP1: S_NEW</code>", "<code>VOP2 vop3: V_A, V_B</code>", "Translation", "Sampled", "width:60.00%"):
+            self.assertIn(expected, html)
+        throws = re.findall(r'<td>(Translation|Recompiler)</td><td><div class="bar"><i style="width:([\d.]+)%;background:#d29922"></i></div></td><td>(\d+)</td>', html)
+        self.assertEqual(throws, [("Translation", "100.00", "2"), ("Recompiler", "50.00", "1")])
 
     def test_without_source_numbers_the_old_files_are_written(self):
         with tempfile.TemporaryDirectory() as directory:

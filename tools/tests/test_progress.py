@@ -23,7 +23,8 @@ def excessive_nesting():
 
 
 SHADER_SOURCE = {"isa": "AMD RDNA 2", "instructions": {"total": 5, "decoded": 3, "translated": 1},
-                 "dpp": {"total": 2, "decoded": 1}, "unsupported_throws": 3, "forms": [], "untranslated": []}
+                 "dpp": {"total": 2, "decoded": 1}, "unsupported_throws": 3, "forms": [], "untranslated": [],
+                 "throw_areas": [], "throw_sites": [], "formats": {"total": 0, "sampled": 0, "buffer": 0, "host": 0}}
 
 
 class ProgressSnapshotTests(unittest.TestCase):

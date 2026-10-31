@@ -27,6 +27,12 @@ The scan takes every encoded form of every instruction in AMD's RDNA 2 instructi
 - **DPP forms** are reported separately.
 - **Unsupported throws:** `throw` statements under `core/shader/recompiler` (tests excluded) whose message or exception type says unsupported or not implemented.
 
+The "Still needed" panel under the progress map, and the matching section of the progress page, list what is left, all read from the same scan:
+
+- the forms the decoder does not decode (base and VOP3 forms, then DPP forms separately) and the decoded opcodes the translator has no `case` for, by name, grouped by encoding and form;
+- the unsupported-throw sites as bars per recompiler area (the first directory under `core/shader/recompiler`; top-level files are "Recompiler"). `progress.json` carries the per-site file, line and message under `shader_source.throw_sites`;
+- image formats as bars: sampled and typed-buffer formats from the recompiler's format tables (`IrBufferFormat`, `DefinedImageFormats`, `kFormatInfoTable`, `GetFormatInfo`), and formats the driver maps to a Vulkan format in `libSceAgcDriver/Graphics/src/TextureFormat.cpp` (`kFormatLookup` and `remapGuestFormat`).
+
 When the recompiler is restructured so a table or function cannot be found, the scan stops with an error naming it. The Pages workflows pass `--require-shader-source`, so nothing is published from a failed scan; without the flag `progress.py` prints a warning and leaves the shader source numbers out.
 
 `tools/rdna2_isa_forms.txt` is derived from AMD's machine-readable ISA XML (`amdgpu_isa_rdna2.xml`, published under the MIT licence; the file keeps AMD's copyright and permission notice). To refresh it for a newer release, run `python3 tools/progress.py --regenerate-isa-forms amdgpu_isa_rdna2.xml`.

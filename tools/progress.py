@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sys
+import textwrap
 from fractions import Fraction
 from html import escape
 from pathlib import Path
@@ -353,17 +354,80 @@ def shader_forms_panel(source):
     return {"groups": groups, "done": instructions["decoded"], "total": instructions["total"], "percent": shader_source_percent(source)}
 
 
+THROW_COLOR, LIST_WIDTH, LINE = "#d29922", 70, 16
+
+
+def form_label(form):
+    return form["encoding"] if form["form"] == "base" else f'{form["encoding"]} {form["form"]}'
+
+
+def still_needed(source):
+    forms = source["forms"]
+    plain, dpp = ("base", "vop3"), ("dpp16", "dpp8")
+
+    def names(kind, selected):
+        return [f'{form_label(f)}: {", ".join(f[kind])}' for f in forms if f[kind] and f["form"] in selected]
+
+    lists = [
+        (f'Instruction forms not decoded ({sum(len(f["missing"]) for f in forms if f["form"] in plain)})', names("missing", plain)),
+        (f'DPP forms not decoded ({sum(len(f["missing"]) for f in forms if f["form"] in dpp)})', names("missing", dpp)),
+        (f'Decoded, no translator case ({sum(len(f["untranslated"]) for f in forms)})', names("untranslated", plain + dpp)),
+    ]
+    formats = source["formats"]
+    return {
+        "lists": lists,
+        "throws": (source["unsupported_throws"], [(a["name"], a["count"]) for a in source["throw_areas"]]),
+        "formats": [("Sampled", formats["sampled"], formats["total"]), ("Typed buffer", formats["buffer"], formats["total"]),
+                    ("Vulkan host format", formats["host"], formats["total"])],
+    }
+
+
+def bar(x, y, width, fraction, color, label):
+    return [rect(x, y, width, 14, TODO_COLOR), rect(x, y, max(width * fraction, 1) if fraction else 0, 14, color), text(x + 4, y + 11, label, 11)]
+
+
+def still_needed_svg(source, top):
+    data = still_needed(source)
+    parts = [text(4, top + 21, "Still needed (source coverage, not game compatibility)", 16)]
+    y = top + 44
+    for heading, lines in data["lists"]:
+        parts.append(text(4, y, heading, 13))
+        y += LINE
+        for line in lines or ["none"]:
+            for row in textwrap.wrap(line, LIST_WIDTH, subsequent_indent="  "):
+                parts.append(text(12, y, row, 11))
+                y += LINE - 2
+        y += 6
+    left_end = y
+    x, width = PANEL_WIDTH + GAP, PANEL_WIDTH
+    y = top + 44
+    total, areas = data["throws"]
+    parts.append(text(x + 4, y, f"Unsupported-throw sites by area ({total})", 13))
+    y += 8
+    for name, count in areas:
+        parts += bar(x, y, width, count / areas[0][1], THROW_COLOR, f"{name}: {count}")
+        y += 18
+    y += 14
+    parts.append(text(x + 4, y, f'Image formats (of {data["formats"][0][2]})', 13))
+    y += 8
+    for label, count, of in data["formats"]:
+        parts += bar(x, y, width, count / of if of else 0, DONE_COLOR, f"{label}: {count}/{of}")
+        y += 18
+    return parts, max(left_end, y) - top + 6
+
+
 def render(libraries, shaders, shader_source=None):
     width, height = 2 * PANEL_WIDTH + GAP, HEADER + MAP_HEIGHT
-    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">',
-             rect(0, 0, width, height, BORDER, 0)]
-    parts += treemap("System libraries*", libraries, 0)
+    body = treemap("System libraries*", libraries, 0)
     if shader_source:
-        parts += treemap("Shader forms decoded", shader_forms_panel(shader_source), PANEL_WIDTH + GAP)
+        body += treemap("Shader forms decoded", shader_forms_panel(shader_source), PANEL_WIDTH + GAP)
+        panel, extra = still_needed_svg(shader_source, height)
+        body += panel
+        height += extra
     else:
-        parts += treemap("GPU shader instructions", shaders, PANEL_WIDTH + GAP)
-    parts.append("</svg>")
-    return "\n".join(parts)
+        body += treemap("GPU shader instructions", shaders, PANEL_WIDTH + GAP)
+    return "\n".join([f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">',
+                      rect(0, 0, width, height, BORDER, 0), *body, "</svg>"])
 
 
 def badge(label, data, value=None):
@@ -408,6 +472,25 @@ def shader_source_badge(source):
     return badge("shader forms decoded", {"percent": shader_source_percent(source)}, f'{instructions["decoded"]}/{instructions["total"]}')
 
 
+def bar_rows(rows, color, scale=0):
+    return [f'<tr><td>{escape(label)}</td><td><div class="bar"><i style="width:{100 * count / (scale or of) if scale or of else 0:.2f}%;background:{color}"></i></div></td>'
+            f'<td>{count}{f"/{of}" if of else ""}</td></tr>' for label, count, of in rows]
+
+
+def still_needed_html(source):
+    data = still_needed(source)
+    parts = ["<h2>Still needed</h2>"]
+    for heading, lines in data["lists"]:
+        parts.append(f"<h3>{escape(heading)}</h3>")
+        parts.append("<ul>" + "".join(f"<li><code>{escape(line)}</code></li>" for line in lines) + "</ul>" if lines else "<p>None.</p>")
+    total, areas = data["throws"]
+    parts += [f"<h3>Unsupported-throw sites by area ({total})</h3>", "<table>", *bar_rows([(n, c, 0) for n, c in areas], THROW_COLOR, areas[0][1] if areas else 0), "</table>"]
+    parts += [f'<h3>Image formats (of {data["formats"][0][2]})</h3>', "<table>", *bar_rows(data["formats"], DONE_COLOR), "</table>",
+              f'<p>Formats are counted from <a href="{SOURCE}/core/libs/prx/libSceAgcDriver/Graphics/src/TextureFormat.cpp">TextureFormat.cpp</a> '
+              "and the recompiler's format tables: sampled and typed-buffer formats the recompiler handles, and formats the driver maps to a Vulkan format.</p>"]
+    return "\n".join(parts)
+
+
 def shader_source_section(source):
     if not source:
         return ""
@@ -433,6 +516,7 @@ def shader_source_section(source):
         f'Unsupported throws are <code>throw</code> statements in <a href="{SOURCE}/core/shader/recompiler">core/shader/recompiler</a> '
         "whose message or exception type says unsupported or not implemented. "
         f'<a href="{SOURCE}/tools/shader_scan.py">How it is measured</a>.</p>',
+        still_needed_html(source),
     ])
 
 
@@ -452,7 +536,7 @@ def summary(libraries, shaders, shader_source=None):
         '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
         '<title>AnyPS5 progress</title>',
         '<style>body{font-family:sans-serif;max-width:1000px;margin:auto;padding:16px}img{max-width:100%}'
-        'table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:2px 8px}td+td,th+th{text-align:right}</style>',
+        '.bar{background:#6e7681;width:300px;height:14px}.bar i{display:block;height:14px}table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:2px 8px}td+td,th+th{text-align:right}</style>',
         '</head><body>',
         "<h1>Progress</h1>",
         '<img src="progress.svg" alt="progress">',
