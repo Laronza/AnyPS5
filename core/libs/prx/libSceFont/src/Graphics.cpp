@@ -545,7 +545,8 @@ bool SegmentWrite(FontDrawupFrame* frame, FontSegmentArena* arena,
         std::uint8_t* unit = frame->unit;
         if (!unit || !offset) {
             if (scePthreadMutexLock(arena->mutex) != 0) return false;
-            const std::uint32_t slots = (frame->unitSize + 7 + arena->slotSize) / arena->slotSize;
+            const std::uint64_t slots64 = (std::uint64_t{frame->unitSize} + 7 + arena->slotSize) / arena->slotSize;
+            const std::uint32_t slots = slots64 > 0xffffffffu ? 0xffffffffu : static_cast<std::uint32_t>(slots64);
             std::uint8_t* const memory = SegmentArenaAllocate(arena, slots);
             if (memory) {
                 arena->statUsed = arena->used;
@@ -755,7 +756,7 @@ int GraphicsAppendGradientSegment(FontGraphicsFrame* graphicsObject, void* gradi
     stop.color = DrawupPackColor(rgba);
     auto* const object = frame->object;
     auto* const arena = &object->resource->arena;
-    if (!frame->unitSize)
+    if (frame->unitSize < sizeof(FontSegmentStop))
         return DrawupRecordError(frame, FONT_GRAPHICS_ERROR_NO_SEGMENT_SPACE);
     std::uint32_t offset = frame->unitUsed % frame->unitSize;
     if (!frame->unit) offset = 0;

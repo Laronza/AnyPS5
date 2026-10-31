@@ -758,18 +758,18 @@ void DrawupGradientSegments() {
         auto* frame = reinterpret_cast<FontGraphicsFrame*>(&f.frame);
         f.frame.unitSize = 0x10;
         f.resource.arena.slotSize = 4;
-        Require(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.5f, color) == 0);
-        auto* unit = static_cast<std::uint8_t*>(f.frame.unitHead);
-        Require(unit != nullptr);
-        auto* unit2 = static_cast<std::uint8_t*>(*reinterpret_cast<void**>(unit));
-        auto* unit3 = static_cast<std::uint8_t*>(*reinterpret_cast<void**>(unit2));
-        Require(unit2 != nullptr && unit3 != nullptr);
-        Require(unit[8] == 0xff && unit[9] == 0x10 && unit[10] == 0 && unit[11] == 0);
-        Require(f.record.next == reinterpret_cast<TestDrawupRecord*>(unit2 + 8));
-        Require(unit2[8] == 0x20 && *reinterpret_cast<std::uint32_t*>(unit2 + 0xc) == 7);
-        Require(*reinterpret_cast<void**>(unit2 + 0x10) == nullptr);
-        Require(*reinterpret_cast<float*>(unit3 + 8) == 0.5f);
-        Require(*reinterpret_cast<std::uint32_t*>(unit3 + 0xc) == 0x80808080);
+        RequireError(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.5f, color), NoSegmentSpace);
+        Require(f.frame.error == NoSegmentSpace && f.frame.unit == nullptr && f.frame.unitHead == nullptr);
+        Require(f.record.next == nullptr);
+    }
+    {
+        SegmentFixture f;
+        auto* frame = reinterpret_cast<FontGraphicsFrame*>(&f.frame);
+        f.frame.unitSize = 0xffffffff;
+        RequireError(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.5f, color), NoSegmentSpace);
+        Require(f.frame.error == NoSegmentSpace && f.frame.unit == nullptr && f.frame.unitHead == nullptr);
+        Require(f.record.next == nullptr);
+        Require(f.resource.arena.used == 0);
     }
     {
         SegmentFixture f;
