@@ -348,11 +348,10 @@ std::set<Domain::VirtualAddress> CodeInstructionCollector::Collect(const std::ve
         }
     };
     std::vector<Domain::DynamicTag> relrTags;
-    for (const auto tag : {36, 35, 37})
+    for (const auto tag : {35, 36, 37})
         if (tags.contains(tag)) relrTags.push_back({tag, tags.at(tag)});
     for (const auto& [slot, target] : ReadRelrRelocations(bytes, headers, relrTags)) {
-        const auto [recorded, inserted] = pointers.Values.emplace(slot, target);
-        if (!inserted && recorded->second != target) throw Domain::RelinkerException("Code analysis: invalid relative relocation", slot);
+        pointers.Values.emplace(slot, target);
         addPointerRoot(target);
     }
     readRelocations(relaOffset, relaSize, false);
