@@ -757,10 +757,23 @@ void DrawupGradientSegments() {
         SegmentFixture f;
         auto* frame = reinterpret_cast<FontGraphicsFrame*>(&f.frame);
         f.frame.unitSize = 0x10;
-        f.resource.arena.slotSize = 4;
-        RequireError(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.5f, color), NoSegmentSpace);
-        Require(f.frame.error == NoSegmentSpace && f.frame.unit == nullptr && f.frame.unitHead == nullptr);
-        Require(f.record.next == nullptr);
+        Require(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.5f, color) == 0);
+        Require(f.frame.error == 0);
+        auto* padUnit = static_cast<std::uint8_t*>(f.frame.unitHead);
+        Require(padUnit != nullptr && f.frame.unitUsed == 0x28);
+        const auto* pad = padUnit + 8;
+        Require(pad[0] == 0xff && pad[1] == 0x10 && pad[2] == 0 && pad[3] == 0);
+        Require(std::all_of(pad + 4, pad + 0x10, [](std::uint8_t v) { return v == 0; }));
+        auto* unit2 = static_cast<std::uint8_t*>(*reinterpret_cast<void**>(padUnit));
+        auto* unit3 = static_cast<std::uint8_t*>(*reinterpret_cast<void**>(unit2));
+        Require(unit2 != nullptr && unit3 != nullptr && f.frame.unit == unit3);
+        auto* stop = reinterpret_cast<TestSegmentStop*>(f.record.next);
+        Require(reinterpret_cast<std::uint8_t*>(stop) == unit2 + 8);
+        Require(stop->type == 0x20 && stop->epoch == 7 && stop->next == nullptr);
+        Require(*reinterpret_cast<float*>(unit3 + 8) == 0.5f && *reinterpret_cast<std::uint32_t*>(unit3 + 12) == 0x80808080);
+        Require(f.resource.arena.used == 18 && f.resource.arena.statMaximum == 18);
+        Require(sceFontGraphicsAppendGradientSegment(frame, &f.record, 0.2f, color) == 0);
+        Require(f.frame.error == 0);
     }
     {
         SegmentFixture f;

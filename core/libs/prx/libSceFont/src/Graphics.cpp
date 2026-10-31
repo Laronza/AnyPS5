@@ -756,7 +756,7 @@ int GraphicsAppendGradientSegment(FontGraphicsFrame* graphicsObject, void* gradi
     stop.color = DrawupPackColor(rgba);
     auto* const object = frame->object;
     auto* const arena = &object->resource->arena;
-    if (frame->unitSize < sizeof(FontSegmentStop))
+    if (!frame->unitSize)
         return DrawupRecordError(frame, FONT_GRAPHICS_ERROR_NO_SEGMENT_SPACE);
     std::uint32_t offset = frame->unitUsed % frame->unitSize;
     if (!frame->unit) offset = 0;
