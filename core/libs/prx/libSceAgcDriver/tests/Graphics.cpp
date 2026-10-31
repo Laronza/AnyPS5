@@ -11689,6 +11689,22 @@ void meshArgumentTests() {
     Require(same(ResolveMeshArguments(record(96 * 6, 600, 0), rules(triangles, 96 * 6)), {6, 600, 1, 96 * 6, 0}), "groups times instances at the device limit");
     Require(same(ResolveMeshArguments(record(0xffffffffu, 1, 0xfffffff0u), rules(points, 0xffffffffu)), {15, 1, 1, 15, 0xfffffff0u}), "first index near the end of a huge index buffer");
     Require(same(ResolveMeshArguments(record(0xffffffffu, 1, 0), rules(points, 0xffffffffu)), {0, 0, 0, 0xffffffffu, 0}), "groups over the device limit draw nothing");
+    context.meshLimits.maxMeshWorkGroupCount[2] = 3;
+    const auto grid = [&](std::uint32_t groups, std::uint32_t instances, std::array<std::uint32_t, 3> expected) {
+        const auto value = AgcDriver::Graphics::MeshGridFor(context, groups, instances);
+        return value.groups == expected[0] && value.instances == expected[1] && value.layers == expected[2];
+    };
+    Require(grid(1000, 1, {1000, 1, 1}), "groups at the X limit stay in one layer");
+    Require(grid(1001, 1, {501, 1, 2}), "one group past the X limit splits the groups evenly over two layers");
+    Require(grid(1001, 2, {501, 2, 2}), "instances keep Y when the groups take two layers");
+    Require(grid(2999, 1, {1000, 1, 3}), "three layers at the X limit");
+    Require(grid(3001, 1, {0, 0, 0}), "more layers than the Z limit draw nothing");
+    context.meshLimits.maxMeshWorkGroupCount[2] = 10;
+    Require(grid(4000, 1, {1000, 1, 4}), "groups at the total limit");
+    Require(grid(4001, 1, {0, 0, 0}), "groups whose layers pass the total limit draw nothing");
+    Require(grid(1001, 4, {0, 0, 0}), "groups times instances past the total limit draw nothing");
+    Require(grid(1, 601, {0, 0, 0}), "instances over the Y limit draw nothing");
+    Require(grid(0, 1, {0, 0, 0}) && grid(1, 0, {0, 0, 0}), "no groups or no instances draw nothing");
 }
 
 void meshLimitTests() {
