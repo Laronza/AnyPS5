@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <limits>
+#include <vector>
 
 namespace AgcDriver::Graphics {
 namespace {
@@ -74,6 +76,40 @@ struct BinaryHandles {
     }
 };
 
+}
+
+bool PipelineBinaryStore::LayersCompatible(VkPhysicalDevice physical, PFN_vkEnumerateDeviceLayerProperties enumerate) {
+    if (enumerate == nullptr) {
+        std::fprintf(stderr, "[pipeline-binary] disabled: active layer enumeration unavailable; using the driver pipeline cache\n");
+        return false;
+    }
+    VkResult result = VK_INCOMPLETE;
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
+        std::uint32_t count = 0;
+        result = enumerate(physical, &count, nullptr);
+        if (result == VK_INCOMPLETE) continue;
+        if (result != VK_SUCCESS) break;
+        if (count == 0) return true;
+        std::vector<VkLayerProperties> layers(count);
+        result = enumerate(physical, &count, layers.data());
+        if (result == VK_INCOMPLETE) continue;
+        if (result != VK_SUCCESS) break;
+        layers.resize(count);
+        for (const auto& layer : layers) {
+            if (std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") != 0 && std::strcmp(layer.layerName, "VK_LAYER_LUNARG_gfxreconstruct") != 0) continue;
+            if (layer.specVersion >= VK_MAKE_API_VERSION(0, 1, 3, 294)) continue;
+            std::fprintf(stderr, "[pipeline-binary] disabled: active layer %s reports Vulkan %u.%u.%u (< 1.3.294); using the driver pipeline cache\n",
+                layer.layerName, VK_API_VERSION_MAJOR(layer.specVersion), VK_API_VERSION_MINOR(layer.specVersion), VK_API_VERSION_PATCH(layer.specVersion));
+            return false;
+        }
+        return true;
+    }
+    if (result == VK_INCOMPLETE) {
+        std::fprintf(stderr, "[pipeline-binary] disabled: active layer enumeration remained VK_INCOMPLETE after 3 attempts; using the driver pipeline cache\n");
+    } else {
+        std::fprintf(stderr, "[pipeline-binary] disabled: active layer enumeration failed (VkResult %d); using the driver pipeline cache\n", static_cast<int>(result));
+    }
+    return false;
 }
 
 PipelineBinaryStore::PipelineBinaryStore(const Context& context, const VkPhysicalDeviceProperties& properties) : context(context), properties(properties) {

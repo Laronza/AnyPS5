@@ -9,6 +9,7 @@ namespace AgcDriver::Graphics {
 
 class PipelineBinaryStore {
 public:
+    static bool LayersCompatible(VkPhysicalDevice physical, PFN_vkEnumerateDeviceLayerProperties enumerate);
     PipelineBinaryStore(const Context& context, const VkPhysicalDeviceProperties& properties);
     std::vector<std::byte> Key(const VkComputePipelineCreateInfo& info, std::span<const std::uint32_t> spirv, std::span<const std::uint32_t> layout) const;
     void CreateComputePipeline(const VkComputePipelineCreateInfo& info, std::span<const std::uint32_t> spirv, std::span<const std::uint32_t> layout, VkPipeline* pipeline) const;

@@ -605,7 +605,9 @@ public:
             VkPhysicalDevicePipelineBinaryFeaturesKHR binaryFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_BINARY_FEATURES_KHR};
             VkDevicePipelineBinaryInternalCacheControlKHR internalCache{VK_STRUCTURE_TYPE_DEVICE_PIPELINE_BINARY_INTERNAL_CACHE_CONTROL_KHR};
             const std::array binaryDependencies{VK_KHR_MAINTENANCE_5_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME, VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME, VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME};
-            if (pipelineBinaries && hasExtension(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME) && std::ranges::all_of(binaryDependencies, hasExtension)) {
+            const bool wantPipelineBinaries = pipelineBinaries && hasExtension(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME) && std::ranges::all_of(binaryDependencies, hasExtension) &&
+                PipelineBinaryStore::LayersCompatible(context.physical, function<PFN_vkEnumerateDeviceLayerProperties>("vkEnumerateDeviceLayerProperties"));
+            if (wantPipelineBinaries) {
                 maintenance.pNext = &binaryFeatures;
                 VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &maintenance};
                 function<PFN_vkGetPhysicalDeviceFeatures2>("vkGetPhysicalDeviceFeatures2")(context.physical, &features);

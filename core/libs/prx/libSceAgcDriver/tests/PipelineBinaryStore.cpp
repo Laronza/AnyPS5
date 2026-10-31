@@ -1,5 +1,6 @@
 #include "prx/libSceAgcDriver/Graphics/include/PipelineBinaryStore.hpp"
 #include "ShaderCacheDirectory.hpp"
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <cstring>
@@ -8,6 +9,7 @@
 #include <map>
 #include <random>
 #include <thread>
+#include <vector>
 
 using namespace AgcDriver::Graphics;
 
@@ -31,6 +33,74 @@ std::function<void()> duringCapture;
 
 void Check(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
+}
+
+std::vector<VkLayerProperties> activeLayers;
+VkResult layerCountResult = VK_SUCCESS;
+VkResult layerDataResult = VK_SUCCESS;
+unsigned incompleteLayerReads = 0;
+
+VKAPI_ATTR VkResult VKAPI_CALL EnumerateLayers(VkPhysicalDevice physical, std::uint32_t* count, VkLayerProperties* properties) {
+    Check(physical == reinterpret_cast<VkPhysicalDevice>(1), "layer guard lost the physical device");
+    if (properties == nullptr) {
+        *count = static_cast<std::uint32_t>(activeLayers.size());
+        return layerCountResult;
+    }
+    const auto written = std::min(*count, static_cast<std::uint32_t>(activeLayers.size()));
+    std::copy_n(activeLayers.begin(), written, properties);
+    *count = written;
+    if (incompleteLayerReads != 0) {
+        --incompleteLayerReads;
+        return VK_INCOMPLETE;
+    }
+    return layerDataResult;
+}
+
+void LayerCompatibilityTests() {
+    const auto physical = reinterpret_cast<VkPhysicalDevice>(1);
+    Check(PipelineBinaryStore::LayersCompatible(physical, EnumerateLayers), "no active layers disabled pipeline binaries");
+    struct Case {
+        const char* name;
+        std::uint32_t version;
+        bool allowed;
+    };
+    const Case cases[]{
+        {"VK_LAYER_KHRONOS_validation", VK_MAKE_API_VERSION(0, 1, 3, 275), false},
+        {"VK_LAYER_KHRONOS_validation", VK_MAKE_API_VERSION(0, 1, 3, 293), false},
+        {"VK_LAYER_KHRONOS_validation", VK_MAKE_API_VERSION(0, 1, 3, 294), true},
+        {"VK_LAYER_KHRONOS_validation", VK_MAKE_API_VERSION(0, 1, 4, 363), true},
+        {"VK_LAYER_LUNARG_gfxreconstruct", VK_MAKE_API_VERSION(0, 1, 3, 280), false},
+        {"VK_LAYER_VALVE_steam_overlay_64", VK_MAKE_API_VERSION(0, 1, 3, 207), true},
+    };
+    for (const auto& test : cases) {
+        VkLayerProperties layer{};
+        std::strcpy(layer.layerName, test.name);
+        layer.specVersion = test.version;
+        activeLayers = {layer};
+        Check(PipelineBinaryStore::LayersCompatible(physical, EnumerateLayers) == test.allowed, test.name);
+    }
+    activeLayers[0].specVersion = VK_MAKE_API_VERSION(0, 1, 4, 363);
+    VkLayerProperties oldValidation{};
+    std::strcpy(oldValidation.layerName, "VK_LAYER_KHRONOS_validation");
+    oldValidation.specVersion = VK_MAKE_API_VERSION(0, 1, 3, 275);
+    activeLayers.push_back(oldValidation);
+    Check(!PipelineBinaryStore::LayersCompatible(physical, EnumerateLayers), "mixed layers hid old validation");
+    activeLayers.pop_back();
+    for (const auto result : {VK_ERROR_INITIALIZATION_FAILED, VK_INCOMPLETE}) {
+        layerCountResult = result;
+        Check(!PipelineBinaryStore::LayersCompatible(physical, EnumerateLayers), "failed or incomplete layer count was accepted");
+        layerCountResult = VK_SUCCESS;
+        layerDataResult = result;
+        Check(!PipelineBinaryStore::LayersCompatible(physical, EnumerateLayers), "failed or incomplete layer data was accepted");
+        layerDataResult = VK_SUCCESS;
+    }
+    activeLayers.push_back(oldValidation);
+    incompleteLayerReads = 1;
+    Check(!PipelineBinaryStore::LayersCompatible(physical, EnumerateLayers), "incomplete read hid old validation");
+    activeLayers.pop_back();
+    incompleteLayerReads = 1;
+    Check(PipelineBinaryStore::LayersCompatible(physical, EnumerateLayers), "transient incomplete read disabled compatible layers");
+    Check(!PipelineBinaryStore::LayersCompatible(physical, nullptr), "missing layer enumerator was accepted");
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL Key(VkDevice, const VkPipelineCreateInfoKHR* info, VkPipelineBinaryKeyKHR* key) {
@@ -136,6 +206,7 @@ void Environment(const char* name, const char* value) {
 }
 
 int main() try {
+    LayerCompatibilityTests();
     const auto root = std::filesystem::temp_directory_path() / ("aps5-binary-test-" + std::to_string(std::random_device{}()));
     std::filesystem::create_directories(root);
     struct Cleanup {
