@@ -9,6 +9,9 @@
 #include "prx/libkernel/File/include/NativeStat.hpp"
 #include "prx/libkernel/KernelErrors.hpp"
 #include "tests/TemporaryFile.hpp"
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -1438,7 +1441,13 @@ int main() {
     Require(flaggedDirectory >= 0 && sceKernelFstat(flaggedDirectory, &directoryStatus) == 0 && directoryStatus.st_blksize == 0x10000);
     Require(sceKernelStat(rootName.c_str(), &directoryStatus) == 0 && directoryStatus.st_blksize == 0x10000);
     FileStat fileStatus{};
-    Require(sceKernelStat(presentName.c_str(), &fileStatus) == 0 && fileStatus.st_blksize != 0x10000);
+#ifdef _WIN32
+    Require(sceKernelStat(presentName.c_str(), &fileStatus) == 0 && fileStatus.st_blksize == 512);
+#else
+    struct stat presentHostStat {};
+    Require(::stat(presentName.c_str(), &presentHostStat) == 0);
+    Require(sceKernelStat(presentName.c_str(), &fileStatus) == 0 && fileStatus.st_blksize == static_cast<decltype(fileStatus.st_blksize)>(presentHostStat.st_blksize));
+#endif
     Require(sceKernelClose(flaggedDirectory) == 0);
     std::vector<char> entries(4096);
     for (const auto& directoryName : {std::string("/"), std::string("."), rootName + "/", rootName + "/.."}) {
