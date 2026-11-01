@@ -35,7 +35,7 @@ MemoryInfo imageMemoryInfoFromInstruction(const RdnaInstruction& inst) {
     memory.imageDimension = inst.imageDimension;
     memory.imageAddressComponents = inst.imageAddressComponents;
     memory.imageHasMip = inst.op == RdnaOpcode::ImageLoadMip || inst.op == RdnaOpcode::ImageStoreMip || inst.op == RdnaOpcode::ImageLoadMipPck || inst.op == RdnaOpcode::ImageLoadMipPckSgn || inst.op == RdnaOpcode::ImageStoreMipPck;
-    memory.imagePacked = inst.op == RdnaOpcode::ImageLoadPck || inst.op == RdnaOpcode::ImageLoadPckSgn || inst.op == RdnaOpcode::ImageLoadMipPck || inst.op == RdnaOpcode::ImageLoadMipPckSgn || inst.op == RdnaOpcode::ImageStorePck || inst.op == RdnaOpcode::ImageStoreMipPck || inst.op == RdnaOpcode::ImageGather4hPck;
+    memory.imagePacked = inst.op == RdnaOpcode::ImageLoadPck || inst.op == RdnaOpcode::ImageLoadPckSgn || inst.op == RdnaOpcode::ImageLoadMipPck || inst.op == RdnaOpcode::ImageLoadMipPckSgn || inst.op == RdnaOpcode::ImageStorePck || inst.op == RdnaOpcode::ImageStoreMipPck || inst.op == RdnaOpcode::ImageGather4hPck || inst.op == RdnaOpcode::ImageGather8hPck;
     memory.dataSigned = inst.op == RdnaOpcode::ImageLoadPckSgn || inst.op == RdnaOpcode::ImageLoadMipPckSgn;
     memory.imageR128 = inst.imageR128;
     return memory;
@@ -210,7 +210,7 @@ bool TranslationContext::imageSample(const RdnaInstruction& inst) {
 }
 
 bool TranslationContext::imageGather(const RdnaInstruction& inst) {
-    if (inst.op == RdnaOpcode::ImageGather4hPck && inst.dataBits != 32u) {
+    if ((inst.op == RdnaOpcode::ImageGather4hPck || inst.op == RdnaOpcode::ImageGather8hPck) && inst.dataBits != 32u) {
         throw std::runtime_error("packed horizontal gather with D16 data is not measured");
     }
     const MemoryInfo memory = imageMemoryInfoFromInstruction(inst);

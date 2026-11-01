@@ -1255,7 +1255,11 @@ void EmitPackedHorizontalGatherOp(SpirvValueEmitContext& ctx, const ImageEmitAcc
     for (std::uint32_t component = 0; component < info.componentCount; component++) {
         texelBits += info.componentBits[component];
     }
-    std::uint32_t streamWords[4] = {ConstantU32(state, 0), ConstantU32(state, 0), ConstantU32(state, 0), ConstantU32(state, 0)};
+    const std::uint32_t elementCount = HasFlag(mem, RdnaImageSampleFlagGather8h) ? 8u : 4u;
+    std::uint32_t streamWords[8] = {
+        ConstantU32(state, 0), ConstantU32(state, 0), ConstantU32(state, 0), ConstantU32(state, 0),
+        ConstantU32(state, 0), ConstantU32(state, 0), ConstantU32(state, 0), ConstantU32(state, 0)
+    };
     std::uint32_t rowInside = 0;
     const bool twoDimensional = dimension == RdnaImageDimension::Dim2D;
     if (texelBits <= 32u) {
@@ -1303,7 +1307,7 @@ void EmitPackedHorizontalGatherOp(SpirvValueEmitContext& ctx, const ImageEmitAcc
             rowInside = Binary(state, spv::OpSLessThan, TypeBool(state), rawRow, height);
             row = clampInto(rawRow, height);
         }
-        for (std::uint32_t element = 0; element < 4u; element++) {
+        for (std::uint32_t element = 0; element < elementCount; element++) {
             const auto column = clampInto(Binary(state, spv::OpIAdd, TypeI32(state), anchor, ConstantI32(state, static_cast<std::int32_t>(element) - 1)), width);
             std::uint32_t coord = column;
             if (twoDimensional) {
@@ -1318,9 +1322,11 @@ void EmitPackedHorizontalGatherOp(SpirvValueEmitContext& ctx, const ImageEmitAcc
             const auto position = element * texelBits;
             const auto word = position / 32u;
             const auto shift = position % 32u;
-            streamWords[word] = Binary(state, spv::OpBitwiseOr, TypeU32(state), streamWords[word], shift == 0u ? bits : Binary(state, spv::OpShiftLeftLogical, TypeU32(state), bits, ConstantU32(state, shift)));
-            if (shift != 0u && shift + texelBits > 32u) {
-                streamWords[word + 1u] = Binary(state, spv::OpBitwiseOr, TypeU32(state), streamWords[word + 1u], Binary(state, spv::OpShiftRightLogical, TypeU32(state), bits, ConstantU32(state, 32u - shift)));
+            if (word < 8u) {
+                streamWords[word] = Binary(state, spv::OpBitwiseOr, TypeU32(state), streamWords[word], shift == 0u ? bits : Binary(state, spv::OpShiftLeftLogical, TypeU32(state), bits, ConstantU32(state, shift)));
+                if (shift != 0u && shift + texelBits > 32u && word + 1u < 8u) {
+                    streamWords[word + 1u] = Binary(state, spv::OpBitwiseOr, TypeU32(state), streamWords[word + 1u], Binary(state, spv::OpShiftRightLogical, TypeU32(state), bits, ConstantU32(state, 32u - shift)));
+                }
             }
         }
     }

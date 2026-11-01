@@ -112,13 +112,14 @@ std::uint32_t TexelBits(std::int32_t x, std::int32_t y) {
     return bits;
 }
 
-std::array<std::uint32_t, 4> Expected(std::uint32_t tid, std::uint32_t dmask) {
+std::array<std::uint32_t, 4> Expected(std::uint32_t tid, std::uint32_t dmask, bool gather8) {
     const float u = std::bit_cast<float>(Input[tid * 4u + 0u]);
     const float v = std::bit_cast<float>(Input[tid * 4u + 1u]);
     const auto anchor = static_cast<std::int32_t>(std::floor(u * static_cast<float>(Width) - 0.5f));
     const auto row = static_cast<std::int32_t>(std::floor(v * static_cast<float>(Height)));
     std::uint32_t stream[8] = {};
-    for (std::uint32_t element = 0; element < 4u; ++element) {
+    const std::uint32_t count = gather8 ? 8u : 4u;
+    for (std::uint32_t element = 0; element < count; ++element) {
         const auto bits = TexelBits(anchor + static_cast<std::int32_t>(element) - 1, row);
         stream[element] = bits;
     }
@@ -152,17 +153,18 @@ ShaderRecompiler::RecompileResult Compile(AgcDriver::VulkanDevice& device) {
     return ShaderRecompiler::Recompile(request);
 }
 
-void Run(AgcDriver::VulkanDevice& device, std::uint32_t dmask) {
-    PckGather4h[4] = 0xf1880008u | (dmask << 8u);
+void Run(AgcDriver::VulkanDevice& device, std::uint32_t opcode, std::uint32_t dmask) {
+    PckGather4h[4] = (0x3cu << 26u) | (opcode << 18u) | (dmask << 8u) | 8u;
     Output.fill(0xdeadbeefu);
     const auto result = Compile(device);
     device.Dispatch(result, 1, 1, 1, {}, reinterpret_cast<std::uintptr_t>(PckGather4h.data()));
     device.WaitIdle();
+    const bool gather8 = opcode == 0x63u;
     for (std::uint32_t tid = 0; tid < Threads; ++tid) {
-        const auto expected = Expected(tid, dmask);
+        const auto expected = Expected(tid, dmask, gather8);
         for (std::uint32_t component = 0; component < static_cast<std::uint32_t>(std::popcount(dmask)); ++component) {
             const std::uint32_t actual = Output[tid * 4u + component];
-            Require(actual == expected[component], std::string("packed horizontal gather: dmask ") + std::to_string(dmask) + " thread " + std::to_string(tid) + " register " + std::to_string(component) + " is " + Hex(actual) + ", expected " + Hex(expected[component]));
+            Require(actual == expected[component], std::string("packed horizontal gather: opcode ") + std::to_string(opcode) + " dmask " + std::to_string(dmask) + " thread " + std::to_string(tid) + " register " + std::to_string(component) + " is " + Hex(actual) + ", expected " + Hex(expected[component]));
         }
     }
 }
@@ -175,7 +177,10 @@ int main() {
         if (!device) return VulkanTestSkipped;
         FillTexels();
         FillInput();
-        for (const std::uint32_t dmask : {0xfu, 0x1u, 0x5u, 0xau, 0x8u}) Run(*device, dmask);
+        for (const std::uint32_t dmask : {0xfu, 0x1u, 0x5u, 0xau, 0x8u}) {
+            Run(*device, 0x62u, dmask);
+            Run(*device, 0x63u, dmask);
+        }
         std::puts("image packed horizontal gather tests passed");
         return 0;
     } catch (const std::exception& error) {

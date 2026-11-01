@@ -27,6 +27,16 @@ static void CheckPck(std::uint32_t encoding, RdnaOpcode opcode, std::uint32_t dm
     Require(instruction.dataComponents == dataComponents);
     Require(instruction.dataDwordCount == dataComponents);
     Require(IsImageOpcode(instruction.op));
+    IrProgram program;
+    auto& block = program.CreateBlock();
+    program.SetEntryBlock(block);
+    TranslationContext context(program, block, 256);
+    context.TranslateInstruction(instruction);
+    Require(program.Resources().memoryInfo.size() == 1u);
+    const auto& memory = program.Resources().memoryInfo.back();
+    Require(memory.imagePacked);
+    Require(memory.dmask == dmask);
+    Require(memory.dataDwords == dataComponents);
 }
 static void CheckSamplerVccTuple() {
     const std::array<std::uint32_t, 2> code{0xf0800f08u, 26u << 21u};
@@ -154,6 +164,7 @@ int main() {
     CheckPck(0x62u, RdnaOpcode::ImageGather4hPck, 0x3u, 2u);
     CheckPck(0x62u, RdnaOpcode::ImageGather4hPck, 0xFu, 4u);
     CheckPck(0x63u, RdnaOpcode::ImageGather8hPck, 0x1u, 1u);
+    CheckPck(0x63u, RdnaOpcode::ImageGather8hPck, 0x3u, 2u);
     CheckPck(0x63u, RdnaOpcode::ImageGather8hPck, 0xFu, 4u);
     CheckPckRejectsZeroMask(0x62u);
     CheckPckRejectsZeroMask(0x63u);
