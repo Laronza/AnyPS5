@@ -445,9 +445,9 @@ def render(libraries, shaders, shader_source=None):
                       rect(0, 0, width, height, BORDER, 0), *body, "</svg>"])
 
 
-def badge(label, data, value=None):
+def badge(label, data, value=None, color=None):
     percent = data["percent"]
-    color = "#4c1" if percent >= 90 else "#97ca00" if percent >= 60 else "#dfb317" if percent >= 30 else "#fe7d37"
+    color = color or ("#4c1" if percent >= 90 else "#97ca00" if percent >= 60 else "#dfb317" if percent >= 30 else "#fe7d37")
     value = value or f"{percent}%"
     left, right = 10 + 7 * len(label), 10 + 7 * len(value)
     width = left + right
