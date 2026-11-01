@@ -230,7 +230,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(data["shader_source"]["instructions"], self.SOURCE["instructions"])
         self.assertEqual(data["shader_source"]["unsupported_throws"], 3)
         self.assertNotIn("untranslated", data["shader_source"])
-        self.assertIn("source coverage, not game compatibility", html)
+        self.assertIn("counted from the recompiler's code, not from playing games", html)
         self.assertIn("3/5", badge)
         self.assertNotIn("1166", html)
         self.assertNotIn("GPU shader instructions", html)
@@ -268,7 +268,7 @@ class ReportTests(unittest.TestCase):
                          "Instruction forms not decoded (2)", "S_NEW", "V_X", "DPP forms not decoded (1)", "V_Y",
                          "Decoded, no translator case (3)", "V_A, V_B", "V_Z", "Translation", "Recompiler",
                          "Sampled", "6/10", "Typed buffer", "5/10", "Vulkan host format", "4/10",
-                         "Still needed: source coverage, not game compatibility"):
+                         "Still needed (counted from the code, not from playing games)"):
             self.assertIn(expected, values)
         self.assertRegex(svg, r'viewBox="0 0 1000 (\d+)" width="1000" height="\1"')
         track = 495 - 170 - 64 - 8
@@ -294,8 +294,8 @@ class ReportTests(unittest.TestCase):
         recolored_source = re.sub(r"^(DONE_COLOR, TODO_COLOR\b.*)$", lambda m: m.group(1) + '\nDONE_COLOR, TODO_COLOR = "#00ff00", "#da3633"', source, count=1, flags=re.M)
         self.assertNotEqual(recolored_source, source)
         with tempfile.TemporaryDirectory() as directory:
-            for name in ("nid_names.py", "shader_scan.py"):
-                shutil.copy(TOOLS / name, Path(directory) / name)
+            for module in TOOLS.glob("*.py"):
+                shutil.copy(module, Path(directory) / module.name)
             (Path(directory) / "progress.py").write_text(recolored_source, encoding="utf-8")
             spec = importlib.util.spec_from_file_location("anyps5_progress_palette", Path(directory) / "progress.py")
             recolored = importlib.util.module_from_spec(spec)

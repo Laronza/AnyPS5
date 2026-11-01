@@ -427,7 +427,7 @@ def still_needed_svg(source, top):
             y += 3
         y += 8
     y = max(left_end, y) + 6
-    parts.append(plain_text(4, y + 10, "Still needed: source coverage, not game compatibility", 11))
+    parts.append(plain_text(4, y + 10, "Still needed (counted from the code, not from playing games)", 11))
     return parts, y + 20 - top
 
 
@@ -511,7 +511,7 @@ def shader_source_section(source):
         return ""
     instructions, dpp = source["instructions"], source["dpp"]
     return "\n".join([
-        "<h2>Shader recompiler source coverage</h2>",
+        "<h2>Shader recompiler: counted from the code</h2>",
         "<table>",
         "<tr><th>Measure</th><th>Count</th><th>Of</th></tr>",
         f'<tr><td>Instruction forms decoded</td><td>{instructions["decoded"]}</td><td>{instructions["total"]}</td></tr>',
@@ -524,7 +524,7 @@ def shader_source_section(source):
         *[f'<tr><td>{escape(f["encoding"])}</td><td>{escape(f["form"])}</td><td>{f["decoded"]}</td><td>{f["translated"]}</td><td>{f["total"]}</td></tr>'
           for f in source["forms"]],
         "</table>",
-        "<p>This is source coverage, not game compatibility. A form counts as decoded when the decoder's opcode tables map it "
+        "<p>These numbers are counted from the recompiler's code, not from playing games, so they say nothing about whether a game runs. A form counts as decoded when the decoder's opcode tables map it "
         "to an opcode (VOP3 and DPP rules included); it counts as translated when the translator has a case for that opcode, "
         "which does not show the translation is correct. Forms are the base, VOP3 and DPP encodings of the AMD RDNA 2 "
         f'instruction set (<a href="{SOURCE}/tools/rdna2_isa_forms.txt">tools/rdna2_isa_forms.txt</a>); SDWA forms are not counted. '
