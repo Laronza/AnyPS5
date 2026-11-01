@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <limits>
 
 namespace {
 
@@ -87,8 +86,8 @@ int main() {
     Reset(1);
     Require(sceLibcInternalAlignedArrayNewNothrow_nid_no_patch(8, 64, &nothrowTag) == nullptr && allocations == 1, "a failed allocation returns null without throwing");
 
-    Reset(0);
-    Require(sceLibcInternalAlignedArrayNewNothrow_nid_no_patch(std::numeric_limits<std::size_t>::max(), 64, &nothrowTag) == nullptr, "an impossible size returns null");
+    Reset(2);
+    Require(sceLibcInternalAlignedArrayNewNothrow_nid_no_patch(8, 64, &nothrowTag) == nullptr && allocations == 1, "without a new handler the first failure returns null");
 
     Reset(0);
     sceLibcInternalAlignedArrayDelete_nid_no_patch(nullptr, 64);
