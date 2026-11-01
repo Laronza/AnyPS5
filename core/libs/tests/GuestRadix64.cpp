@@ -127,19 +127,19 @@ static void CheckBoundaries() {
 }
 
 static void CheckStringTermination() {
-    Check(a64l_nid_postfix("FT#extra") == 2001);
-    Check(a64l_nid_postfix("jt#extra") == 3695);
-    Check(a64l_nid_postfix("./-abc") == 64);
-    Check(a64l_nid_postfix("z!foo") == 63);
+    Check(a64l_nid_postfix("FT#extra") == -43055);
+    Check(a64l_nid_postfix("jt#extra") == -41361);
+    Check(a64l_nid_postfix("./-abc") == -4032);
+    Check(a64l_nid_postfix("z!foo") == -769);
     Check(a64l_nid_postfix("zzzzz1@xyz") == -1L);
 
-    Check(a64l_nid_postfix("#FT") == 0);
-    Check(a64l_nid_postfix("@extra") == 0);
-    Check(a64l_nid_postfix(" abc") == 0);
-    Check(a64l_nid_postfix("\tabc") == 0);
-    Check(a64l_nid_postfix("-1") == 0);
-    Check(a64l_nid_postfix("+1") == 0);
-    Check(a64l_nid_postfix("~radix") == 0);
+    Check(a64l_nid_postfix("#FT") == -11);
+    Check(a64l_nid_postfix("@extra") == -1209542005);
+    Check(a64l_nid_postfix(" abc") == -14);
+    Check(a64l_nid_postfix("	abc") == -37);
+    Check(a64l_nid_postfix("-1") == -1);
+    Check(a64l_nid_postfix("+1") == -3);
+    Check(a64l_nid_postfix("~radix") == 1856400835);
 }
 
 static void CheckLengthCeiling() {
@@ -194,21 +194,26 @@ static void CheckBufferCapacity() {
     Check(l64a_r_nid_postfix(0, buf, 1) == 0 && std::strcmp(buf, "") == 0);
 
     Check(l64a_r_nid_postfix(1, buf, 0) == -1);
-    Check(l64a_r_nid_postfix(1, buf, 1) == -1);
+    Check(l64a_r_nid_postfix(1, buf, 1) == -1 && std::strcmp(buf, "") == 0);
     Check(l64a_r_nid_postfix(1, buf, 2) == 0 && std::strcmp(buf, "/") == 0);
 
-    Check(l64a_r_nid_postfix(64, buf, 1) == -1);
-    Check(l64a_r_nid_postfix(64, buf, 2) == -1);
+    Check(l64a_r_nid_postfix(64, buf, 1) == -1 && std::strcmp(buf, "") == 0);
+    Check(l64a_r_nid_postfix(64, buf, 2) == -1 && std::strcmp(buf, ".") == 0);
     Check(l64a_r_nid_postfix(64, buf, 3) == 0 && std::strcmp(buf, "./") == 0);
 
-    Check(l64a_r_nid_postfix(2001, buf, 2) == -1);
+    Check(l64a_r_nid_postfix(2001, buf, 2) == -1 && std::strcmp(buf, "F") == 0);
     Check(l64a_r_nid_postfix(2001, buf, 3) == 0 && std::strcmp(buf, "FT") == 0);
 
-    Check(l64a_r_nid_postfix(3695, buf, 2) == -1);
+    Check(l64a_r_nid_postfix(3695, buf, 2) == -1 && std::strcmp(buf, "j") == 0);
     Check(l64a_r_nid_postfix(3695, buf, 3) == 0 && std::strcmp(buf, "jt") == 0);
 
-    for (int len = -2; len <= 6; ++len) {
+    for (int len = -2; len <= 0; ++len) {
         Check(l64a_r_nid_postfix(-1L, buf, len) == -1);
+    }
+    for (int len = 1; len <= 6; ++len) {
+        Check(l64a_r_nid_postfix(-1L, buf, len) == -1);
+        Check(std::strlen(buf) == static_cast<std::size_t>(len - 1));
+        Check(std::strncmp(buf, "zzzzz1", len - 1) == 0);
     }
     Check(l64a_r_nid_postfix(-1L, buf, 7) == 0 && std::strcmp(buf, "zzzzz1") == 0);
     Check(l64a_r_nid_postfix(-1L, buf, 8) == 0 && std::strcmp(buf, "zzzzz1") == 0);
