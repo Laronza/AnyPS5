@@ -354,7 +354,8 @@ def shader_forms_panel(source):
     return {"groups": groups, "done": instructions["decoded"], "total": instructions["total"], "percent": shader_source_percent(source)}
 
 
-THROW_COLOR, LIST_WIDTH, LINE = "#d29922", 70, 16
+TRACK_COLOR, THROW_COLOR, FORMAT_COLOR = "#6e7681", "#d29922", "#2ea043"
+COLUMN_WIDTH, LABEL_WIDTH, COUNT_WIDTH, ROW, NAMES_WIDTH, NAMES_LEFT = PANEL_WIDTH, 170, 64, 20, 56, 84
 
 
 def form_label(form):
@@ -365,13 +366,13 @@ def still_needed(source):
     forms = source["forms"]
     plain, dpp = ("base", "vop3"), ("dpp16", "dpp8")
 
-    def names(kind, selected):
-        return [f'{form_label(f)}: {", ".join(f[kind])}' for f in forms if f[kind] and f["form"] in selected]
+    def groups(kind, selected):
+        return [(form_label(f), f[kind]) for f in forms if f[kind] and f["form"] in selected]
 
     lists = [
-        (f'Instruction forms not decoded ({sum(len(f["missing"]) for f in forms if f["form"] in plain)})', names("missing", plain)),
-        (f'DPP forms not decoded ({sum(len(f["missing"]) for f in forms if f["form"] in dpp)})', names("missing", dpp)),
-        (f'Decoded, no translator case ({sum(len(f["untranslated"]) for f in forms)})', names("untranslated", plain + dpp)),
+        (f'Instruction forms not decoded ({sum(len(f["missing"]) for f in forms if f["form"] in plain)})', groups("missing", plain)),
+        (f'DPP forms not decoded ({sum(len(f["missing"]) for f in forms if f["form"] in dpp)})', groups("missing", dpp)),
+        (f'Decoded, no translator case ({sum(len(f["untranslated"]) for f in forms)})', groups("untranslated", plain + dpp)),
     ]
     formats = source["formats"]
     return {
@@ -382,38 +383,52 @@ def still_needed(source):
     }
 
 
-def bar(x, y, width, fraction, color, label):
-    return [rect(x, y, width, 14, TODO_COLOR), rect(x, y, max(width * fraction, 1) if fraction else 0, 14, color), text(x + 4, y + 11, label, 11)]
+def plain_text(x, y, value, size=12, anchor="start", family="sans-serif"):
+    return (f'<text x="{x:.2f}" y="{y:.2f}" font-family="{family}" font-size="{size}" fill="{TEXT}" '
+            f'text-anchor="{anchor}">{escape(value)}</text>')
+
+
+def bar_row(x, y, label, count, of, color, caption=None):
+    track = COLUMN_WIDTH - LABEL_WIDTH - COUNT_WIDTH - 8
+    left = x + LABEL_WIDTH
+    return [plain_text(x + 4, y + 11, label),
+            f'<rect x="{left:.2f}" y="{y:.2f}" width="{track}" height="14" fill="{TRACK_COLOR}"/>',
+            *([f'<rect x="{left:.2f}" y="{y:.2f}" width="{max(track * count / of, 1):.2f}" height="14" fill="{color}"/>'] if count and of else []),
+            plain_text(x + COLUMN_WIDTH - 4, y + 11, caption or str(count), anchor="end")]
 
 
 def still_needed_svg(source, top):
     data = still_needed(source)
-    parts = [text(4, top + 21, "Still needed (source coverage, not game compatibility)", 16)]
-    y = top + 44
-    for heading, lines in data["lists"]:
-        parts.append(text(4, y, heading, 13))
-        y += LINE
-        for line in lines or ["none"]:
-            for row in textwrap.wrap(line, LIST_WIDTH, subsequent_indent="  "):
-                parts.append(text(12, y, row, 11))
-                y += LINE - 2
-        y += 6
-    left_end = y
-    x, width = PANEL_WIDTH + GAP, PANEL_WIDTH
-    y = top + 44
+    right = PANEL_WIDTH + GAP
     total, areas = data["throws"]
-    parts.append(text(x + 4, y, f"Unsupported-throw sites by area ({total})", 13))
-    y += 8
+    parts = [text(4, top + 21, f"Unsupported-throw sites by area ({total})", 16),
+             text(right + 4, top + 21, "Instruction forms still needed", 16)]
+    y = top + HEADER
     for name, count in areas:
-        parts += bar(x, y, width, count / areas[0][1], THROW_COLOR, f"{name}: {count}")
-        y += 18
+        parts += bar_row(0, y, name, count, total, THROW_COLOR)
+        y += ROW
     y += 14
-    parts.append(text(x + 4, y, f'Image formats (of {data["formats"][0][2]})', 13))
-    y += 8
+    parts.append(text(4, y + 4, f'Image formats (of {data["formats"][0][2]})', 16))
+    y += HEADER - 10
     for label, count, of in data["formats"]:
-        parts += bar(x, y, width, count / of if of else 0, DONE_COLOR, f"{label}: {count}/{of}")
-        y += 18
-    return parts, max(left_end, y) - top + 6
+        parts += bar_row(0, y, label, count, of, FORMAT_COLOR, f"{count}/{of}")
+        y += ROW
+    left_end = y
+    y = top + HEADER
+    for heading, groups in data["lists"]:
+        parts.append(plain_text(right + 4, y + 11, heading, 13))
+        y += ROW
+        for label, names in groups or [("none", [])]:
+            rows = textwrap.wrap(", ".join(names), NAMES_WIDTH) or [""]
+            parts.append(plain_text(right + 12, y + 11, label, 11))
+            for row in rows:
+                parts.append(plain_text(right + NAMES_LEFT + 20, y + 11, row, 11, family="monospace"))
+                y += 15
+            y += 3
+        y += 8
+    y = max(left_end, y) + 6
+    parts.append(plain_text(4, y + 10, "Still needed: source coverage, not game compatibility", 11))
+    return parts, y + 20 - top
 
 
 def render(libraries, shaders, shader_source=None):
@@ -474,21 +489,21 @@ def shader_source_badge(source):
 
 def bar_rows(rows, color, scale=0):
     return [f'<tr><td>{escape(label)}</td><td><div class="bar"><i style="width:{100 * count / (scale or of) if scale or of else 0:.2f}%;background:{color}"></i></div></td>'
-            f'<td>{count}{f"/{of}" if of else ""}</td></tr>' for label, count, of in rows]
+            f'<td class="n">{count}{f"/{of}" if of else ""}</td></tr>' for label, count, of in rows]
 
 
 def still_needed_html(source):
     data = still_needed(source)
-    parts = ["<h2>Still needed</h2>"]
-    for heading, lines in data["lists"]:
-        parts.append(f"<h3>{escape(heading)}</h3>")
-        parts.append("<ul>" + "".join(f"<li><code>{escape(line)}</code></li>" for line in lines) + "</ul>" if lines else "<p>None.</p>")
     total, areas = data["throws"]
-    parts += [f"<h3>Unsupported-throw sites by area ({total})</h3>", "<table>", *bar_rows([(n, c, 0) for n, c in areas], THROW_COLOR, areas[0][1] if areas else 0), "</table>"]
-    parts += [f'<h3>Image formats (of {data["formats"][0][2]})</h3>', "<table>", *bar_rows(data["formats"], DONE_COLOR), "</table>",
-              f'<p>Formats are counted from <a href="{SOURCE}/core/libs/prx/libSceAgcDriver/Graphics/src/TextureFormat.cpp">TextureFormat.cpp</a> '
-              "and the recompiler's format tables: sampled and typed-buffer formats the recompiler handles, and formats the driver maps to a Vulkan format.</p>"]
-    return "\n".join(parts)
+    left = [f"<h3>Unsupported-throw sites by area ({total})</h3>", "<table>", *bar_rows([(n, c, 0) for n, c in areas], THROW_COLOR, total), "</table>",
+            f'<h3>Image formats (of {data["formats"][0][2]})</h3>', "<table>", *bar_rows(data["formats"], FORMAT_COLOR), "</table>",
+            f'<p>Formats are counted from <a href="{SOURCE}/core/libs/prx/libSceAgcDriver/Graphics/src/TextureFormat.cpp">TextureFormat.cpp</a> '
+            "and the recompiler's format tables: sampled and typed-buffer formats the recompiler handles, and formats the driver maps to a Vulkan format.</p>"]
+    right = ["<h3>Instruction forms still needed</h3>"]
+    for heading, groups in data["lists"]:
+        right.append(f"<h4>{escape(heading)}</h4>")
+        right.append("<table>" + "".join(f"<tr><td>{escape(label)}</td><td class='names'><code>{escape(', '.join(names))}</code></td></tr>" for label, names in groups) + "</table>" if groups else "<p>None.</p>")
+    return "\n".join(["<h2>Still needed</h2>", '<div class="cols">', "<div>", *left, "</div>", "<div>", *right, "</div>", "</div>"])
 
 
 def shader_source_section(source):
@@ -536,7 +551,7 @@ def summary(libraries, shaders, shader_source=None):
         '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">',
         '<title>AnyPS5 progress</title>',
         '<style>body{font-family:sans-serif;max-width:1000px;margin:auto;padding:16px}img{max-width:100%}'
-        '.bar{background:#6e7681;width:300px;height:14px}.bar i{display:block;height:14px}table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:2px 8px}td+td,th+th{text-align:right}</style>',
+        '.bar{background:#6e7681;width:100%;min-width:120px;height:14px}.bar i{display:block;height:14px}td.n{text-align:right}td.names{text-align:left}.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px}.cols table{width:100%}@media(max-width:760px){.cols{grid-template-columns:1fr}}table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:2px 8px}td+td,th+th{text-align:right}</style>',
         '</head><body>',
         "<h1>Progress</h1>",
         '<img src="progress.svg" alt="progress">',

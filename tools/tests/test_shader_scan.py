@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 TOOLS = Path(__file__).resolve().parent.parent
 
@@ -247,29 +248,75 @@ class ReportTests(unittest.TestCase):
     def test_still_needed_groups_names_by_form_kind(self):
         data = progress.still_needed(self.SOURCE)
         self.assertEqual(data["lists"], [
-            ("Instruction forms not decoded (2)", ["SOP1: S_NEW", "VOP2 vop3: V_X"]),
-            ("DPP forms not decoded (1)", ["VOP2 dpp16: V_Y"]),
-            ("Decoded, no translator case (3)", ["VOP2 vop3: V_A, V_B", "VOP2 dpp16: V_Z"]),
+            ("Instruction forms not decoded (2)", [("SOP1", ["S_NEW"]), ("VOP2 vop3", ["V_X"])]),
+            ("DPP forms not decoded (1)", [("VOP2 dpp16", ["V_Y"])]),
+            ("Decoded, no translator case (3)", [("VOP2 vop3", ["V_A", "V_B"]), ("VOP2 dpp16", ["V_Z"])]),
         ])
         self.assertEqual(data["throws"], (3, [("Translation", 2), ("Recompiler", 1)]))
         self.assertEqual(data["formats"], [("Sampled", 6, 10), ("Typed buffer", 5, 10), ("Vulkan host format", 4, 10)])
 
+    def panel(self, svg):
+        rows = re.findall(r'<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="14" fill="(#[0-9a-f]{6})"/>', svg)
+        texts = re.findall(r'<text x="([\d.]+)" y="([\d.]+)" font-family="[\w-]+" font-size="\d+" fill="#ffffff" text-anchor="(\w+)">([^<]*)</text>', svg)
+        return [(float(x), float(y), float(w), fill) for x, y, w, fill in rows], [(float(x), float(y), anchor, value) for x, y, anchor, value in texts]
+
     def test_still_needed_panel_lists_names_and_draws_the_bars(self):
         svg = progress.render(dict(self.GROUP), dict(self.GROUP), self.SOURCE)
-        for expected in ("Still needed", "Instruction forms not decoded (2)", "SOP1: S_NEW", "VOP2 vop3: V_X",
-                         "DPP forms not decoded (1)", "VOP2 dpp16: V_Y", "Decoded, no translator case (3)", "VOP2 vop3: V_A, V_B", "VOP2 dpp16: V_Z",
-                         "Unsupported-throw sites by area (3)", "Translation: 2", "Recompiler: 1",
-                         "Sampled: 6/10", "Typed buffer: 5/10", "Vulkan host format: 4/10"):
-            self.assertIn(expected, svg)
+        bars, texts = self.panel(svg)
+        values = [t[3] for t in texts] + re.findall(r'paint-order="stroke">([^<]*)</text>', svg)
+        for expected in ("Unsupported-throw sites by area (3)", "Instruction forms still needed", "Image formats (of 10)",
+                         "Instruction forms not decoded (2)", "S_NEW", "V_X", "DPP forms not decoded (1)", "V_Y",
+                         "Decoded, no translator case (3)", "V_A, V_B", "V_Z", "Translation", "Recompiler",
+                         "Sampled", "6/10", "Typed buffer", "5/10", "Vulkan host format", "4/10",
+                         "Still needed: source coverage, not game compatibility"):
+            self.assertIn(expected, values)
         self.assertRegex(svg, r'viewBox="0 0 1000 (\d+)" width="1000" height="\1"')
-        bars = [float(w) for w in re.findall(r'<rect x="505.00" y="[\d.]+" width="([\d.]+)" height="14.00" fill="#d29922"', svg)]
-        self.assertEqual(bars, [495.0, 247.5])
-        self.assertIn('fill="#2ea043"', svg)
+        track = 495 - 170 - 64 - 8
+        fills = {color: [w for x, y, w, c in bars if c == color] for color in ("#d29922", "#2ea043")}
+        self.assertEqual(fills["#d29922"], [round(track * 2 / 3, 2), round(track * 1 / 3, 2)])
+        self.assertEqual(fills["#2ea043"], [round(track * 6 / 10, 2), round(track * 5 / 10, 2), round(track * 4 / 10, 2)])
+        tracks = [(x, y) for x, y, w, c in bars if c == "#6e7681" and w == track]
+        self.assertEqual(len(tracks), 5)
+        left = [t for t in texts if t[0] < 500]
+        for x, y, anchor, value in texts:
+            for bx, by, bw, color in bars:
+                if color == "#6e7681" and bw == track:
+                    self.assertFalse(bx <= x <= bx + bw and by <= y - 3 <= by + 14, f"{value!r} drawn over a bar")
+        counts = [t for t in left if t[2] == "end"]
+        self.assertEqual([t[3] for t in counts], ["2", "1", "6/10", "5/10", "4/10"])
+        self.assertTrue(all(t[0] == 491 for t in counts))
+
+    def test_still_needed_panel_ignores_the_shared_palette(self):
+        import shutil
+        svg = progress.render(dict(self.GROUP), dict(self.GROUP), self.SOURCE)
+        panel = svg[svg.index("Unsupported-throw sites by area"):]
+        source = (TOOLS / "progress.py").read_text(encoding="utf-8")
+        recolored_source = re.sub(r"^(DONE_COLOR, TODO_COLOR\b.*)$", lambda m: m.group(1) + '\nDONE_COLOR, TODO_COLOR = "#00ff00", "#da3633"', source, count=1, flags=re.M)
+        self.assertNotEqual(recolored_source, source)
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ("nid_names.py", "shader_scan.py"):
+                shutil.copy(TOOLS / name, Path(directory) / name)
+            (Path(directory) / "progress.py").write_text(recolored_source, encoding="utf-8")
+            spec = importlib.util.spec_from_file_location("anyps5_progress_palette", Path(directory) / "progress.py")
+            recolored = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = recolored
+            spec.loader.exec_module(recolored)
+            other = recolored.render(dict(self.GROUP), dict(self.GROUP), self.SOURCE)
+        self.assertEqual(other[other.index("Unsupported-throw sites by area"):], panel)
+        self.assertNotIn("#da3633", panel)
+        self.assertNotIn("#00ff00", panel)
+
+    def test_still_needed_html_scales_to_the_totals_and_keeps_labels_beside_the_bars(self):
         html = progress.summary(dict(self.GROUP), dict(self.GROUP), self.SOURCE)
-        for expected in ("<h2>Still needed</h2>", "<code>SOP1: S_NEW</code>", "<code>VOP2 vop3: V_A, V_B</code>", "Translation", "Sampled", "width:60.00%"):
+        for expected in ("<h2>Still needed</h2>", "<code>S_NEW</code>", "<code>V_A, V_B</code>", '<div class="cols">'):
             self.assertIn(expected, html)
-        throws = re.findall(r'<td>(Translation|Recompiler)</td><td><div class="bar"><i style="width:([\d.]+)%;background:#d29922"></i></div></td><td>(\d+)</td>', html)
-        self.assertEqual(throws, [("Translation", "100.00", "2"), ("Recompiler", "50.00", "1")])
+        throws = re.findall(r'<td>(Translation|Recompiler)</td><td><div class="bar"><i style="width:([\d.]+)%;background:#d29922"></i></div></td><td class="n">(\d+)</td>', html)
+        self.assertEqual(throws, [("Translation", "66.67", "2"), ("Recompiler", "33.33", "1")])
+        formats = re.findall(r'<td>(Sampled|Typed buffer|Vulkan host format)</td><td><div class="bar"><i style="width:([\d.]+)%;background:#2ea043"></i></div></td><td class="n">(\d+/10)</td>', html)
+        self.assertEqual(formats, [("Sampled", "60.00", "6/10"), ("Typed buffer", "50.00", "5/10"), ("Vulkan host format", "40.00", "4/10")])
+        self.assertEqual(re.findall(r"\.bar\{background:(#[0-9a-f]+)", html), ["#6e7681"])
+        section = re.search(r"<h2>Still needed</h2>.*?</div>\n</div>", html, re.S).group(0)
+        self.assertNotIn("#da3633", section)
 
     def test_without_source_numbers_the_old_files_are_written(self):
         with tempfile.TemporaryDirectory() as directory:
