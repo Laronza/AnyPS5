@@ -11396,7 +11396,7 @@ void pipelineCacheHeaderTests(const Device& device) {
 
 int pipelineBinaryTests(const Device& device) {
     if (!device.PipelineBinaries()) {
-        std::cout << "skipped, VK_KHR_pipeline_binary is unavailable\n";
+        std::cout << "skipped, the device lacks VK_KHR_pipeline_binary\n";
         return 77;
     }
     const auto& context = device.GetContext();
