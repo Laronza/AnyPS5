@@ -1,3 +1,5 @@
+#include "prx/libkernel/include/Api.hpp"
+#include "prx/libc/include/Api.hpp"
 #include "SceTypes.hpp"
 #include <atomic>
 #include <chrono>
@@ -5,25 +7,6 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <thread>
-
-extern "C" {
-int APS5_VABI scePthreadCreate(Pthread* thread, const PthreadAttr* attr, PthreadEntry entry, void* arg, const char* name);
-int APS5_VABI scePthreadJoin(Pthread thread, void** retval);
-Pthread APS5_VABI scePthreadSelf(void);
-int APS5_VABI scePthreadGetthreadid(void);
-int APS5_VABI scePthreadGetschedparam(Pthread thread, int* policy, KernelSchedParam* param);
-int APS5_VABI scePthreadAttrInit(PthreadAttr* attr);
-int APS5_VABI scePthreadAttrDestroy(PthreadAttr* attr);
-int APS5_VABI scePthreadAttrSetinheritsched(PthreadAttr* attr, int inheritSched);
-int APS5_VABI scePthreadAttrSetschedpolicy(PthreadAttr* attr, int policy);
-int APS5_VABI scePthreadAttrSetschedparam(PthreadAttr* attr, const KernelSchedParam* param);
-struct GuestRtPrio {
-    std::uint16_t type;
-    std::uint16_t prio;
-};
-int APS5_VABI rtprio_thread_nid_postfix(int function, int lwpid, GuestRtPrio* priority);
-int* APS5_VABI __error_nid_postfix();
-}
 
 static constexpr int SCE_OK = 0;
 static constexpr int GUEST_SCHED_FIFO = 1;
@@ -109,6 +92,17 @@ int main() {
     CheckThread(GUEST_SCHED_FIFO, 256, RTP_PRIO_FIFO);
     Require(LookupError(2, 0, &self) == GUEST_ESRCH);
     Require(LookupError(RTP_LOOKUP, 0, nullptr) == GUEST_EFAULT);
+    auto* unmapped = reinterpret_cast<GuestRtPrio*>(std::uintptr_t{0x10});
+    Require(LookupError(RTP_LOOKUP, 0, unmapped) == GUEST_EFAULT);
+    Require(LookupError(RTP_SET, 0, unmapped) == GUEST_EFAULT);
+    Require(LookupError(RTP_SET, 999999, unmapped) == GUEST_ESRCH);
+    void* page = nullptr;
+    Require(sceKernelMapFlexibleMemory(&page, 0x4000, 3, 0) == 0 && page != nullptr);
+    auto* readOnly = static_cast<GuestRtPrio*>(page);
+    *readOnly = {7, 7};
+    Require(sceKernelMprotect(page, 0x4000, 1) == 0);
+    Require(LookupError(RTP_LOOKUP, 0, readOnly) == GUEST_EFAULT);
+    Require(readOnly->type == 7 && readOnly->prio == 7);
     Require(LookupError(RTP_LOOKUP, 1, &self) == GUEST_ESRCH);
     Require(LookupError(RTP_LOOKUP, 999999, &self) == GUEST_ESRCH);
     bool threw = false;
